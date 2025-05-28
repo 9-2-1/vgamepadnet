@@ -151,7 +151,7 @@ function createStick(text, mode, top, left, height, width) {
       setTimeout(() => {
         touchhandler(scheduled_event);
         scheduled_event = null;
-      }, 50);
+      }, 16);
     }
     scheduled_event = event;
     event.stopPropagation();
@@ -164,7 +164,7 @@ function createStick(text, mode, top, left, height, width) {
 }
 
 function vibration() {
-  fetch("/vibrate",{"method":"POST"})
+  fetch("/vibrate", { method: "POST" })
     .then((x) => x.text())
     .then((x) => {
       let power = Number(x);
@@ -181,6 +181,12 @@ function vibration() {
           a.push(10 - p);
         }
       }
+      for (let i = 1; i < a.length - 1; i++) {
+        if (a[i] == 0) {
+          a[i - 1] += a[i + 1];
+          a.splice(i, 2);
+        }
+      }
       navigator.vibrate(a);
       setTimeout(vibration, 0);
     });
@@ -188,8 +194,8 @@ function vibration() {
 
 const buttonmap = [
   "LT        GU  Y:B:RT",
-  "LB  L.        X:A:RB",
-  "LS    BA    STRS    ",
+  "LBLSL.        X:A:RB",
+  "      BA    STRS    ",
   "    DUDR      R.    ",
   "    DLDD          []",
 ];
@@ -249,12 +255,12 @@ function reload() {
       let button_y = button_y_begin + i * button_a;
       if (button == "[]") {
         createFullScreenButton(
-            "[]",
-            "",
-            (button_y / vh) * 100,
-            (button_x / vw) * 100,
-            (button_a / vh) * 100,
-            (button_a / vw) * 100,
+          "[]",
+          "",
+          (button_y / vh) * 100,
+          (button_x / vw) * 100,
+          (button_a / vh) * 100,
+          (button_a / vw) * 100,
         );
       }
       for (let k = 0; k < buttonname.length; k++) {
