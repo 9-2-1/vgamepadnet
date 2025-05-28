@@ -1,0 +1,35 @@
+body {
+  box-sizing: border-box;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  position: relative;
+  align-content: center;
+  text-align: center;
+  background-color: #777777;
+  user-select: none;
+}
+
+.joybutton {
+  position: absolute;
+  background-color: #ffffff;
+  color: black;
+  align-content: center;
+  text-align: center;
+  border-radius: 100%;
+}
+
+.joystick {
+  position: absolute;
+  background-color: #ffffff;
+  color: black;
+  align-content: center;
+  text-align: center;
+  border-radius: 100%;
+}
+
+.down {
+  background-color: #00ff00;
+}
