@@ -55,6 +55,8 @@ async def post_command(request: web.Request) -> web.Response:
     for cmd in cmds.split("\n"):
         print(">", cmd)
         gamepad_command(cmd)
+    print("o")
+    gamepad.update()
     return web.Response()
 
 
@@ -85,7 +87,6 @@ def gamepad_command(cmd: str) -> None:
                 gamepad.press_button(
                     button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
                 )
-                gamepad.update()
         elif args[1] == "bup":
             attr = args[2]
             if T[attr] < t:
@@ -93,36 +94,30 @@ def gamepad_command(cmd: str) -> None:
                 gamepad.release_button(
                     button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
                 )
-                gamepad.update()
         elif args[1] == "lstick":
             if T["lstick"] < t:
                 T["lstick"] = t
                 x = float(args[2])
                 y = float(args[3])
                 gamepad.left_joystick_float(x, y)
-                gamepad.update()
         elif args[1] == "rstick":
             if T["rstick"] < t:
                 T["rstick"] = t
                 x = float(args[2])
                 y = float(args[3])
                 gamepad.right_joystick_float(x, y)
-                gamepad.update()
         elif args[1] == "ltrig":
             if T["ltrig"] < t:
                 T["ltrig"] = t
                 x = float(args[2])
                 gamepad.left_trigger_float(x)
-                gamepad.update()
         elif args[1] == "rtrig":
             if T["rtrig"] < t:
                 T["rtrig"] = t
                 x = float(args[2])
                 gamepad.right_trigger_float(x)
-                gamepad.update()
         elif args[1] == "reset":
             gamepad.reset()
-            gamepad.update()
             T.clear()
     except Exception:
         traceback.print_exc()
