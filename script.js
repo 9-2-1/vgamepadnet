@@ -132,14 +132,20 @@ function createStick(text, mode, top, left, height, width) {
       y = 2 * ((y - br.top) / br.height) - 1;
       y = -y;
       // ampifier
-      x *= 2;
-      y *= 2;
+      x *= 1.5;
+      y *= 1.5;
       let d = Math.sqrt(x * x + y * y);
       if (d > 1) {
         x /= d;
         y /= d;
         d = 1;
       }
+      // // dead zone
+      // if (d < 0.05) {
+      //   x = 0;
+      //   y = 0;
+      //   d = 0;
+      // }
     } else {
       button.classList.remove("down");
     }
