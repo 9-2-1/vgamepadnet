@@ -1,101 +1,11 @@
 import vgamepad
 import traceback
-from threading import Thread
-from queue import Queue
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from aiohttp import web
 from collections import defaultdict
 from typing import Dict, Any
 
-command: Queue[str] = Queue()
-
-vibrate: int = 0;
-vibrate_peak: int = 0;
-
-class VGamepadNet(BaseHTTPRequestHandler):
-    def do_GET(self) -> None:
-        func = self.path
-        if func == "/exit":
-            command.put("0 exit")
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            self.wfile.write(b"")
-            server.shutdown()
-        elif func == "/":
-            with open("main.html", "rb") as f:
-                content = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-        elif func == "/style.css":
-            with open("style.css", "rb") as f:
-                content = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/stylesheet; charset=utf-8")
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-        elif func == "/script.js":
-            with open("script.js", "rb") as f:
-                content = f.read()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/javascript; charset=utf-8")
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-        else:
-            # 301 redirect to /
-            self.send_response(301)
-            self.send_header("Location", "/")
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-
-    def do_POST(self) -> None:
-        func = self.path
-        if func == "/command":
-            lstr = self.headers.get("Content-Length", "0")
-            l = int(lstr)
-            v = self.rfile.read(l)
-            cmds = v.decode().split("\n")
-            for cmd in cmds:
-                print(">", cmd)
-                command.put(cmd)
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            self.wfile.write(b"")
-        elif func == "/vibrate":
-            global vibrate_peak
-            reply = str(vibrate_peak).encode("utf-8")
-            vibrate_peak = vibrate
-            self.send_response(200)
-            self.send_header("Content-Type", "application/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(reply)))
-            self.end_headers()
-            self.wfile.write(reply)
-        elif func == "/log":
-            lstr = self.headers.get("Content-Length", "0")
-            l = int(lstr)
-            v = self.rfile.read(l)
-            print("L", v.decode())
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            self.wfile.write(b"")
-        else:
-            self.send_response(404)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", "13")
-            self.end_headers()
-            self.wfile.write(b"404 Not Found")
-    def log_message(self, *_: Any) -> None:
-        pass
+vibrate: int = 0
+vibrate_peak: int = 0
 
 
 def update_status(client, target, large_motor, small_motor, led_number, user_data):
@@ -106,74 +16,118 @@ def update_status(client, target, large_motor, small_motor, led_number, user_dat
         vibrate_peak = vibrate
     print(f"vibrate: {vibrate}")
 
-def gploop() -> None:
-    gp = vgamepad.VX360Gamepad()
-    T: Dict[str, int] = defaultdict(int)
-    gp.register_notification(update_status)
-    
-    while not command.is_shutdown:
-        args = command.get().split(" ")
-        try:
-            t = int(args[0])
-            if args[1] == "bdown":
-                attr = args[2]
-                if T[attr] < t:
-                    T[attr] = t
-                    gp.press_button(
-                        button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                    )
-                    gp.update()
-            elif args[1] == "bup":
-                attr = args[2]
-                if T[attr] < t:
-                    T[attr] = t
-                    gp.release_button(
-                        button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                    )
-                    gp.update()
-            elif args[1] == "lstick":
-                if T["lstick"] < t:
-                    T["lstick"] = t
-                    x = float(args[2])
-                    y = float(args[3])
-                    gp.left_joystick_float(x, y)
-                    gp.update()
-            elif args[1] == "rstick":
-                if T["rstick"] < t:
-                    T["rstick"] = t
-                    x = float(args[2])
-                    y = float(args[3])
-                    gp.right_joystick_float(x, y)
-                    gp.update()
-            elif args[1] == "ltrig":
-                if T["ltrig"] < t:
-                    T["ltrig"] = t
-                    x = float(args[2])
-                    gp.left_trigger_float(x)
-                    gp.update()
-            elif args[1] == "rtrig":
-                if T["rtrig"] < t:
-                    T["rtrig"] = t
-                    x = float(args[2])
-                    gp.right_trigger_float(x)
-                    gp.update()
-            elif args[1] == "reset":
-                gp.reset()
-                gp.update()
-                T.clear()
-            elif args[1] == "exit":
-                gp.reset()
-                gp.update()
-                break
-        except Exception:
-            traceback.print_exc()
+
+gamepad = vgamepad.VX360Gamepad()
+T: Dict[str, int] = defaultdict(int)
+gamepad.register_notification(update_status)
+
+routes = web.RouteTableDef()
 
 
-if __name__ == "__main__":
-    gpthread = Thread(target=gploop)
-    gpthread.start()
+@routes.get("/")
+async def static_main_html(request: web.Request) -> web.Response:
+    with open("main.html", "rb") as f:
+        content = f.read()
+        return web.Response(body=content, charset="utf-8", content_type="text/html")
+
+
+@routes.get("/script.js")
+async def static_script_js(request: web.Request) -> web.Response:
+    with open("script.js", "rb") as f:
+        content = f.read()
+        return web.Response(
+            body=content, charset="utf-8", content_type="text/javascript"
+        )
+
+
+@routes.get("/style.css")
+async def static_style_css(request: web.Request) -> web.Response:
+    with open("style.css", "rb") as f:
+        content = f.read()
+        return web.Response(
+            body=content, charset="utf-8", content_type="text/stylesheet"
+        )
+
+
+@routes.post("/command")
+async def post_command(request: web.Request) -> web.Response:
+    cmds = await request.text()
+    for cmd in cmds.split("\n"):
+        print(">", cmd)
+        gamepad_command(cmd)
+    return web.Response()
+
+
+@routes.post("/vibrate")
+async def post_vibrate(request: web.Request) -> web.Response:
+    global vibrate_peak
+    reply = str(vibrate_peak)
+    vibrate_peak = vibrate
+    return web.Response(text=reply)
+
+
+@routes.post("/log")
+async def post_log(request: web.Request) -> web.Response:
+    logstr = await request.text()
+    print("L", logstr)
+    return web.Response()
+
+
+def gamepad_command(cmd: str) -> None:
+    global gamepad
+    args = cmd.split(" ")
     try:
-        server = ThreadingHTTPServer(("0.0.0.0", 8000), VGamepadNet)
-        server.serve_forever()
-    finally:
-        command.shutdown()
+        t = int(args[0])
+        if args[1] == "bdown":
+            attr = args[2]
+            if T[attr] < t:
+                T[attr] = t
+                gamepad.press_button(
+                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
+                )
+                gamepad.update()
+        elif args[1] == "bup":
+            attr = args[2]
+            if T[attr] < t:
+                T[attr] = t
+                gamepad.release_button(
+                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
+                )
+                gamepad.update()
+        elif args[1] == "lstick":
+            if T["lstick"] < t:
+                T["lstick"] = t
+                x = float(args[2])
+                y = float(args[3])
+                gamepad.left_joystick_float(x, y)
+                gamepad.update()
+        elif args[1] == "rstick":
+            if T["rstick"] < t:
+                T["rstick"] = t
+                x = float(args[2])
+                y = float(args[3])
+                gamepad.right_joystick_float(x, y)
+                gamepad.update()
+        elif args[1] == "ltrig":
+            if T["ltrig"] < t:
+                T["ltrig"] = t
+                x = float(args[2])
+                gamepad.left_trigger_float(x)
+                gamepad.update()
+        elif args[1] == "rtrig":
+            if T["rtrig"] < t:
+                T["rtrig"] = t
+                x = float(args[2])
+                gamepad.right_trigger_float(x)
+                gamepad.update()
+        elif args[1] == "reset":
+            gamepad.reset()
+            gamepad.update()
+            T.clear()
+    except Exception:
+        traceback.print_exc()
+
+
+app = web.Application()
+app.add_routes(routes)
+web.run_app(app, port=8000)
