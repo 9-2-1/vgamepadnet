@@ -76,55 +76,65 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
             }
             break;
         case "trigger":
-            Tracker = function (down, x, y) {
-                if (down) {
-                    y = 1.5 * y;
-                    if (y > 1) {
-                        y = 1;
+            {
+                Tracker = function (down, x, y) {
+                    if (down) {
+                        y = 1.5 * y;
+                        if (y > 1) {
+                            y = 1;
+                        }
                     }
-                }
-                else {
-                    y = 0;
-                }
-                command("".concat(name, " ").concat(y));
-            };
+                    else {
+                        y = 0;
+                    }
+                    command("".concat(name, " ").concat(y));
+                };
+            }
             break;
         case "fullscreen":
-            TrackerDown = function () {
-                toggleFullScreen();
-            };
+            {
+                TrackerDown = function () {
+                    toggleFullScreen();
+                };
+            }
             break;
         case "turbo":
-            TrackerDown = function () {
-                toggleButtonRepeat(name[0] + ":");
-            };
+            {
+                TrackerDown = function () {
+                    toggleButtonRepeat(symbol[0] + ":");
+                };
+            }
             break;
         case "input":
-            tagname = "input";
-            OnInput = function () {
-                var val = button.value.trim();
-                macroSteps = val.split(/\s+/).filter(function (s) { return s && s !== " "; });
-                macroStr = macroSteps.join(" ");
-            };
+            {
+                tagname = "input";
+                OnInput = function () {
+                    var val = button.value.trim();
+                    macroSteps = val.split(/\s+/).filter(function (s) { return s && s !== " "; });
+                    macroStr = macroSteps.join(" ");
+                };
+            }
             break;
         case "macro":
-            TrackerDown = function () {
-                if (macroTime === null) {
-                    if (macroStr !== "") {
-                        macroIndex = 0;
-                        macroDown = false;
-                        macroTime = setInterval(macroLoop, 100);
+            {
+                TrackerDown = function () {
+                    if (macroTime === null) {
+                        if (macroStr !== "") {
+                            macroIndex = 0;
+                            macroDown = false;
+                            macroTime = setInterval(macroLoop, 100);
+                        }
                     }
-                }
-                else {
-                    clearInterval(macroTime);
-                    if (macroDown) {
-                        buttonUp(macroSteps[macroIndex]);
+                    else {
+                        clearInterval(macroTime);
+                        if (macroDown) {
+                            buttonUp(macroSteps[macroIndex]);
+                        }
+                        macroTime = null;
                     }
-                    macroTime = null;
-                }
-                updateButtonColor();
-            };
+                    updateButtonColor();
+                };
+            }
             break;
     }
     var button = document.createElement(tagname);

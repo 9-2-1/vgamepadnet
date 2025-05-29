@@ -104,53 +104,64 @@ function createButton(
       }
       break;
     case "trigger":
-      Tracker = (down: boolean, x: number, y: number) => {
-        if (down) {
-          y = 1.5 * y;
-          if (y > 1) {
-            y = 1;
+      {
+        Tracker = (down: boolean, x: number, y: number) => {
+          if (down) {
+            y = 1.5 * y;
+            if (y > 1) {
+              y = 1;
+            }
+          } else {
+            y = 0;
           }
-        } else {
-          y = 0;
-        }
-        command(`${name} ${y}`);
-      };
+          command(`${name} ${y}`);
+        };
+      }
+
       break;
     case "fullscreen":
-      TrackerDown = () => {
-        toggleFullScreen();
-      };
+      {
+        TrackerDown = () => {
+          toggleFullScreen();
+        };
+      }
       break;
     case "turbo":
-      TrackerDown = () => {
-        toggleButtonRepeat(name[0] + ":");
-      };
+      {
+        TrackerDown = () => {
+          toggleButtonRepeat(symbol[0] + ":");
+        };
+      }
       break;
     case "input":
-      tagname = "input";
-      OnInput = () => {
-        const val = button.value.trim();
-        macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
-        macroStr = macroSteps.join(" ");
-      };
+      {
+        tagname = "input";
+        OnInput = () => {
+          const val = button.value.trim();
+          macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
+          macroStr = macroSteps.join(" ");
+        };
+      }
       break;
     case "macro":
-      TrackerDown = () => {
-        if (macroTime === null) {
-          if (macroStr !== "") {
-            macroIndex = 0;
-            macroDown = false;
-            macroTime = setInterval(macroLoop, 100);
+      {
+        TrackerDown = () => {
+          if (macroTime === null) {
+            if (macroStr !== "") {
+              macroIndex = 0;
+              macroDown = false;
+              macroTime = setInterval(macroLoop, 100);
+            }
+          } else {
+            clearInterval(macroTime);
+            if (macroDown) {
+              buttonUp(macroSteps[macroIndex]);
+            }
+            macroTime = null;
           }
-        } else {
-          clearInterval(macroTime);
-          if (macroDown) {
-            buttonUp(macroSteps[macroIndex]);
-          }
-          macroTime = null;
-        }
-        updateButtonColor();
-      };
+          updateButtonColor();
+        };
+      }
       break;
   }
 
