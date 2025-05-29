@@ -11,6 +11,9 @@ var macroSteps = [];
 var macroIndex = 0;
 var macroTime = null;
 var buttonPressed = {};
+var dpadPressed = 8;
+var dpadStr = "↑↗→↘↓↙←↖☩".split("");
+var dpadAltStr = "W WD D SD S SA A WA".split(" ");
 var textToButtonTable = {};
 function log(x) {
     command("L ".concat(JSON.stringify(x)));
@@ -29,10 +32,10 @@ function command(x) {
     }
 }
 var turboButtons = {
-    "A:": { enabled: false, timer: null },
-    "B:": { enabled: false, timer: null },
-    "X:": { enabled: false, timer: null },
-    "Y:": { enabled: false, timer: null },
+    "1:": { enabled: false, timer: null },
+    "2:": { enabled: false, timer: null },
+    "3:": { enabled: false, timer: null },
+    "4:": { enabled: false, timer: null },
 };
 function createButton(mode, label, name, symbol, top, left, height, width) {
     var tagname = "button";
@@ -57,7 +60,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                     // log(`${x}, ${y}`);
                     if (down) {
                         x = 2 * x - 1;
-                        y = -(2 * y - 1);
+                        y = 2 * y - 1;
                         x *= 1.5;
                         y *= 1.5;
                         var d = Math.sqrt(x * x + y * y);
@@ -88,6 +91,36 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                         y = 0;
                     }
                     command("".concat(name, " ").concat(y));
+                };
+            }
+            break;
+        case "dpad":
+            {
+                Tracker = function (down, x, y) {
+                    if (down) {
+                        x = 2 * x - 1;
+                        y = 2 * y - 1;
+                    }
+                    else {
+                        x = 0;
+                        y = 0;
+                    }
+                    var d = Math.sqrt(x * x + y * y);
+                    var direction = 8;
+                    if (d > 0.4) {
+                        var angle = Math.atan2(y, x);
+                        direction = Math.floor((angle / (2 * Math.PI)) * 8 + 2 + 0.5) % 8;
+                        if (direction < 0) {
+                            direction += 8;
+                        }
+                    }
+                    if (direction == 8) {
+                        button.classList.add("button-dpad-center");
+                    }
+                    else {
+                        button.classList.remove("button-dpad-center");
+                    }
+                    dpadChange(direction);
                 };
             }
             break;
@@ -267,28 +300,21 @@ function vibration() {
     oldViberateCount = 0;
 }
 setInterval(vibration, 10);
-// const buttonmap = [
-//   "LT        GU  Y:B:RT",
-//   "LBLSL.        X:A:RB",
-//   "      BA    STRS  A~",
-//   "    DUDR      R.    ",
-//   "    DLDD          []",
-// ];
 var buttonmap = [
     "                                                                                ",
-    "  LT                                  GU                                    RT  ",
-    "            LS                                              Y:                  ",
+    "  LT                                  PS                                    RT  ",
+    "            LS                                              4:                  ",
     "                                                                                ",
-    "  LB            L.                                      X:      B:          RB  ",
-    "                              BA              ST                                ",
-    "                                                            A:                  ",
+    "  LB            L.                                      3:      1:          RB  ",
+    "                              SH              OP                                ",
+    "                                                            2:                  ",
     "                                                                                ",
-    "                    DU                                RS                        ",
-    "                                                                    Y~          ",
-    "                DL      DR                        R.                            ",
-    "                                                                X~      B~      ",
-    "                    DD                                                          ",
-    "                                                                    A~          ",
+    "                                                      RS                        ",
+    "                                                                    4~          ",
+    "                    D+                            R.                            ",
+    "                                                                3~      1~      ",
+    "                                                                                ",
+    "                                                                    2~          ",
     "                                                                                ",
     "                                                                                ",
     "                          IN                      MA                        []  ",
@@ -296,30 +322,28 @@ var buttonmap = [
 ];
 var buttonTable = [
     // [Symbol, Label, Name, Type, Size]
-    ["A:", "A", "A", "button", 3],
-    ["B:", "B", "B", "button", 3],
-    ["X:", "X", "X", "button", 3],
-    ["Y:", "Y", "Y", "button", 3],
-    ["LS", "LS", "LEFT_THUMB", "button", 3],
-    ["RS", "RS", "RIGHT_THUMB", "button", 3],
-    ["LB", "LB", "LEFT_SHOULDER", "button", 3],
-    ["RB", "RB", "RIGHT_SHOULDER", "button", 3],
-    ["DU", "↑", "DPAD_UP", "button", 3],
-    ["DD", "↓", "DPAD_DOWN", "button", 3],
-    ["DL", "←", "DPAD_LEFT", "button", 3],
-    ["DR", "→", "DPAD_RIGHT", "button", 3],
-    ["ST", "☰", "START", "button", 3],
-    ["BA", "❐", "BACK", "button", 3],
-    ["GU", "⭙", "GUIDE", "button", 3],
+    ["1:", "○", "normal CIRCLE", "button", 3],
+    ["2:", "✕", "normal CROSS", "button", 3],
+    ["3:", "□", "normal SQUARE", "button", 3],
+    ["4:", "△", "normal TRIANGLE", "button", 3],
+    ["LS", "LS", "normal THUMB_LEFT", "button", 3],
+    ["RS", "RS", "normal THUMB_RIGHT", "button", 3],
+    ["LB", "LB", "normal SHOULDER_LEFT", "button", 3],
+    ["RB", "RB", "normal SHOULDER_RIGHT", "button", 3],
+    ["OP", "☰", "normal OPTIONS", "button", 3],
+    ["SH", "…", "normal SHARE", "button", 3],
+    ["PS", "PS", "special PS", "button", 3],
+    ["TP", "■", "special TOUCHPAD", "button", 3],
+    ["D+", "☩", "", "dpad", 5],
     ["L.", "(L)", "lstick", "stick", 5],
     ["R.", "(R)", "rstick", "stick", 5],
     ["LT", "LT", "ltrig", "trigger", 3],
     ["RT", "RT", "rtrig", "trigger", 3],
     ["[]", "⛶", "", "fullscreen", 3],
-    ["A~", "[A]", "A", "turbo", 3],
-    ["B~", "[B]", "B", "turbo", 3],
-    ["X~", "[X]", "X", "turbo", 3],
-    ["Y~", "[Y]", "Y", "turbo", 3],
+    ["1~", "[○]", "normal CIRCLE", "turbo", 3],
+    ["2~", "[✕]", "normal CROSS", "turbo", 3],
+    ["3~", "[□]", "normal SQUARE", "turbo", 3],
+    ["4~", "[△]", "normal TRIANGLE", "turbo", 3],
     ["IN", "", "", "input", 3],
     ["MA", "▶", "", "macro", 3],
 ];
@@ -372,14 +396,6 @@ function reload() {
             }
         }
     }
-    textToButtonTable["UP"] = textToButtonTable["DU"];
-    textToButtonTable["DOWN"] = textToButtonTable["DD"];
-    textToButtonTable["LEFT"] = textToButtonTable["DL"];
-    textToButtonTable["RIGHT"] = textToButtonTable["DR"];
-    textToButtonTable["^"] = textToButtonTable["DU"];
-    textToButtonTable["v"] = textToButtonTable["DD"];
-    textToButtonTable["<"] = textToButtonTable["DL"];
-    textToButtonTable[">"] = textToButtonTable["DR"];
     updateButtonColor();
 }
 function wsConnect() {
@@ -435,7 +451,20 @@ function toggleButtonRepeat(symbol) {
     }
     updateButtonColor();
 }
+function textToDirection(text) {
+    var dpadDirection = dpadStr.indexOf(text);
+    if (dpadDirection !== -1) {
+        return dpadDirection;
+    }
+    return dpadAltStr.indexOf(text.toUpperCase());
+}
 function buttonDown(text) {
+    // dpad
+    var dpadDirection = textToDirection(text);
+    if (dpadDirection !== -1) {
+        dpadChange(dpadDirection);
+        return;
+    }
     var button = textToButtonTable[text.toUpperCase()];
     if (button) {
         var symbol = button[0];
@@ -458,6 +487,11 @@ function buttonDown(text) {
     }
 }
 function buttonUp(text) {
+    var dpadDirection = textToDirection(text);
+    if (dpadDirection !== -1) {
+        dpadChange(8);
+        return;
+    }
     var button = textToButtonTable[text.toUpperCase()];
     if (button) {
         var symbol = button[0];
@@ -477,6 +511,13 @@ function buttonUp(text) {
     }
     else {
         console.warn("Unknown button ".concat(text));
+    }
+}
+function dpadChange(direction) {
+    if (dpadPressed !== direction) {
+        command("dpad ".concat(direction));
+        dpadPressed = direction;
+        updateButtonColor();
     }
 }
 function turboButtonDown(symbol) {
@@ -509,7 +550,7 @@ function macroLoop() {
     }
 }
 function updateButtonColor() {
-    buttonNamed["GU"].style.backgroundColor = mainWebsocketColor;
+    buttonNamed["PS"].style.backgroundColor = mainWebsocketColor;
     Object.keys(buttonNamed).forEach(function (sym) {
         var button = buttonNamed[sym];
         if (sym[1] == "~") {
@@ -529,6 +570,18 @@ function updateButtonColor() {
             button.classList.remove("button-pressed");
         }
     });
+    var dpad = buttonNamed["D+"];
+    if (dpad instanceof HTMLButtonElement) {
+        dpad.textContent = dpadStr[dpadPressed];
+        if (dpadPressed == 8) {
+            dpad.classList.remove("button-pressed");
+            dpad.classList.add("button-dpad-center");
+        }
+        else {
+            dpad.classList.add("button-pressed");
+            dpad.classList.remove("button-dpad-center");
+        }
+    }
     var bMA = buttonNamed["MA"];
     var bIN = buttonNamed["IN"];
     if (bIN instanceof HTMLInputElement) {

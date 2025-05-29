@@ -14,6 +14,9 @@ let macroIndex = 0;
 let macroTime: number | null = null;
 
 let buttonPressed: Record<string, boolean> = {};
+let dpadPressed: number = 8;
+let dpadStr = "↑↗→↘↓↙←↖☩".split("");
+let dpadAltStr = "W WD D SD S SA A WA".split(" ");
 let textToButtonTable: Record<
   string,
   [string, string, string, ButtonMode, number]
@@ -39,6 +42,7 @@ function command(x: string): void {
 
 type ButtonMode =
   | "button"
+  | "dpad"
   | "stick"
   | "trigger"
   | "fullscreen"
@@ -48,10 +52,10 @@ type ButtonMode =
 const turboButtons: {
   [symbol: string]: { enabled: boolean; timer: number | null };
 } = {
-  "A:": { enabled: false, timer: null },
-  "B:": { enabled: false, timer: null },
-  "X:": { enabled: false, timer: null },
-  "Y:": { enabled: false, timer: null },
+  "1:": { enabled: false, timer: null },
+  "2:": { enabled: false, timer: null },
+  "3:": { enabled: false, timer: null },
+  "4:": { enabled: false, timer: null },
 };
 
 function createButton(
@@ -86,7 +90,7 @@ function createButton(
           // log(`${x}, ${y}`);
           if (down) {
             x = 2 * x - 1;
-            y = -(2 * y - 1);
+            y = 2 * y - 1;
             x *= 1.5;
             y *= 1.5;
             let d = Math.sqrt(x * x + y * y);
@@ -117,7 +121,34 @@ function createButton(
           command(`${name} ${y}`);
         };
       }
-
+      break;
+    case "dpad":
+      {
+        Tracker = (down: boolean, x: number, y: number) => {
+          if (down) {
+            x = 2 * x - 1;
+            y = 2 * y - 1;
+          } else {
+            x = 0;
+            y = 0;
+          }
+          const d = Math.sqrt(x * x + y * y);
+          let direction = 8;
+          if (d > 0.4) {
+            const angle = Math.atan2(y, x);
+            direction = Math.floor((angle / (2 * Math.PI)) * 8 + 2 + 0.5) % 8;
+            if (direction < 0) {
+              direction += 8;
+            }
+          }
+          if (direction == 8) {
+            button.classList.add("button-dpad-center");
+          } else {
+            button.classList.remove("button-dpad-center");
+          }
+          dpadChange(direction);
+        };
+      }
       break;
     case "fullscreen":
       {
@@ -300,28 +331,21 @@ function vibration() {
 }
 
 setInterval(vibration, 10);
-// const buttonmap = [
-//   "LT        GU  Y:B:RT",
-//   "LBLSL.        X:A:RB",
-//   "      BA    STRS  A~",
-//   "    DUDR      R.    ",
-//   "    DLDD          []",
-// ];
 const buttonmap = [
   "                                                                                ",
-  "  LT                                  GU                                    RT  ",
-  "            LS                                              Y:                  ",
+  "  LT                                  PS                                    RT  ",
+  "            LS                                              4:                  ",
   "                                                                                ",
-  "  LB            L.                                      X:      B:          RB  ",
-  "                              BA              ST                                ",
-  "                                                            A:                  ",
+  "  LB            L.                                      3:      1:          RB  ",
+  "                              SH              OP                                ",
+  "                                                            2:                  ",
   "                                                                                ",
-  "                    DU                                RS                        ",
-  "                                                                    Y~          ",
-  "                DL      DR                        R.                            ",
-  "                                                                X~      B~      ",
-  "                    DD                                                          ",
-  "                                                                    A~          ",
+  "                                                      RS                        ",
+  "                                                                    4~          ",
+  "                    D+                            R.                            ",
+  "                                                                3~      1~      ",
+  "                                                                                ",
+  "                                                                    2~          ",
   "                                                                                ",
   "                                                                                ",
   "                          IN                      MA                        []  ",
@@ -329,33 +353,32 @@ const buttonmap = [
 ];
 const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
   // [Symbol, Label, Name, Type, Size]
-  ["A:", "A", "A", "button", 3],
-  ["B:", "B", "B", "button", 3],
-  ["X:", "X", "X", "button", 3],
-  ["Y:", "Y", "Y", "button", 3],
-  ["LS", "LS", "LEFT_THUMB", "button", 3],
-  ["RS", "RS", "RIGHT_THUMB", "button", 3],
-  ["LB", "LB", "LEFT_SHOULDER", "button", 3],
-  ["RB", "RB", "RIGHT_SHOULDER", "button", 3],
-  ["DU", "↑", "DPAD_UP", "button", 3],
-  ["DD", "↓", "DPAD_DOWN", "button", 3],
-  ["DL", "←", "DPAD_LEFT", "button", 3],
-  ["DR", "→", "DPAD_RIGHT", "button", 3],
-  ["ST", "☰", "START", "button", 3],
-  ["BA", "❐", "BACK", "button", 3],
-  ["GU", "⭙", "GUIDE", "button", 3],
+  ["1:", "○", "normal CIRCLE", "button", 3],
+  ["2:", "✕", "normal CROSS", "button", 3],
+  ["3:", "□", "normal SQUARE", "button", 3],
+  ["4:", "△", "normal TRIANGLE", "button", 3],
+  ["LS", "LS", "normal THUMB_LEFT", "button", 3],
+  ["RS", "RS", "normal THUMB_RIGHT", "button", 3],
+  ["LB", "LB", "normal SHOULDER_LEFT", "button", 3],
+  ["RB", "RB", "normal SHOULDER_RIGHT", "button", 3],
+  ["OP", "☰", "normal OPTIONS", "button", 3],
+  ["SH", "…", "normal SHARE", "button", 3],
+  ["PS", "PS", "special PS", "button", 3],
+  ["TP", "■", "special TOUCHPAD", "button", 3],
+  ["D+", "☩", "", "dpad", 5],
   ["L.", "(L)", "lstick", "stick", 5],
   ["R.", "(R)", "rstick", "stick", 5],
   ["LT", "LT", "ltrig", "trigger", 3],
   ["RT", "RT", "rtrig", "trigger", 3],
   ["[]", "⛶", "", "fullscreen", 3],
-  ["A~", "[A]", "A", "turbo", 3],
-  ["B~", "[B]", "B", "turbo", 3],
-  ["X~", "[X]", "X", "turbo", 3],
-  ["Y~", "[Y]", "Y", "turbo", 3],
+  ["1~", "[○]", "normal CIRCLE", "turbo", 3],
+  ["2~", "[✕]", "normal CROSS", "turbo", 3],
+  ["3~", "[□]", "normal SQUARE", "turbo", 3],
+  ["4~", "[△]", "normal TRIANGLE", "turbo", 3],
   ["IN", "", "", "input", 3],
   ["MA", "▶", "", "macro", 3],
 ];
+
 let buttonNamed: Record<string, HTMLElement> = {};
 
 function reload() {
@@ -425,14 +448,6 @@ function reload() {
       }
     }
   }
-  textToButtonTable["UP"] = textToButtonTable["DU"];
-  textToButtonTable["DOWN"] = textToButtonTable["DD"];
-  textToButtonTable["LEFT"] = textToButtonTable["DL"];
-  textToButtonTable["RIGHT"] = textToButtonTable["DR"];
-  textToButtonTable["^"] = textToButtonTable["DU"];
-  textToButtonTable["v"] = textToButtonTable["DD"];
-  textToButtonTable["<"] = textToButtonTable["DL"];
-  textToButtonTable[">"] = textToButtonTable["DR"];
   updateButtonColor();
 }
 
@@ -488,8 +503,20 @@ function toggleButtonRepeat(symbol: string) {
   }
   updateButtonColor();
 }
-
+function textToDirection(text: string) {
+  const dpadDirection = dpadStr.indexOf(text);
+  if (dpadDirection !== -1) {
+    return dpadDirection;
+  }
+  return dpadAltStr.indexOf(text.toUpperCase());
+}
 function buttonDown(text: string) {
+  // dpad
+  const dpadDirection = textToDirection(text);
+  if (dpadDirection !== -1) {
+    dpadChange(dpadDirection);
+    return;
+  }
   const button = textToButtonTable[text.toUpperCase()];
   if (button) {
     const symbol = button[0];
@@ -509,6 +536,11 @@ function buttonDown(text: string) {
   }
 }
 function buttonUp(text: string) {
+  const dpadDirection = textToDirection(text);
+  if (dpadDirection !== -1) {
+    dpadChange(8);
+    return;
+  }
   const button = textToButtonTable[text.toUpperCase()];
   if (button) {
     const symbol = button[0];
@@ -525,6 +557,13 @@ function buttonUp(text: string) {
     updateButtonColor();
   } else {
     console.warn(`Unknown button ${text}`);
+  }
+}
+function dpadChange(direction: number) {
+  if (dpadPressed !== direction) {
+    command(`dpad ${direction}`);
+    dpadPressed = direction;
+    updateButtonColor();
   }
 }
 function turboButtonDown(symbol: string) {
@@ -559,7 +598,7 @@ function macroLoop() {
 }
 
 function updateButtonColor() {
-  buttonNamed["GU"].style.backgroundColor = mainWebsocketColor;
+  buttonNamed["PS"].style.backgroundColor = mainWebsocketColor;
   Object.keys(buttonNamed).forEach((sym) => {
     const button = buttonNamed[sym];
     if (sym[1] == "~") {
@@ -577,6 +616,17 @@ function updateButtonColor() {
       button.classList.remove("button-pressed");
     }
   });
+  const dpad = buttonNamed["D+"];
+  if (dpad instanceof HTMLButtonElement) {
+    dpad.textContent = dpadStr[dpadPressed];
+    if (dpadPressed == 8) {
+      dpad.classList.remove("button-pressed");
+      dpad.classList.add("button-dpad-center");
+    } else {
+      dpad.classList.add("button-pressed");
+      dpad.classList.remove("button-dpad-center");
+    }
+  }
   const bMA = buttonNamed["MA"];
   const bIN = buttonNamed["IN"];
   if (bIN instanceof HTMLInputElement) {

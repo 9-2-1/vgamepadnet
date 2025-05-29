@@ -38,7 +38,7 @@ def update_status(client, target, large_motor, small_motor, led_number, user_dat
         asyncio.run(globalws.send_str(f"vibrate {vibrate}"))
 
 
-gamepad = vgamepad.VX360Gamepad()
+gamepad = vgamepad.VDS4Gamepad()
 T: Dict[str, int] = defaultdict(int)
 gamepad.register_notification(update_status)
 
@@ -128,19 +128,44 @@ def gamepad_command(cmd: str) -> None:
     try:
         t = int(args[0])
         if args[1] == "bdown":
-            attr = args[2]
+            submode = args[2]
+            attr = args[3]
             if T[attr] < t:
                 T[attr] = t
-                gamepad.press_button(
-                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                )
+                if submode == "special":
+                    gamepad.press_special_button(
+                        special_button=getattr(
+                            vgamepad.DS4_SPECIAL_BUTTONS, f"DS4_SPECIAL_BUTTON_{attr}"
+                        )
+                    )
+                elif submode == "normal":
+                    gamepad.press_button(
+                        button=getattr(vgamepad.DS4_BUTTONS, f"DS4_BUTTON_{attr}")
+                    )
+                else:
+                    log.warning(f"wrong submode {submode}")
         elif args[1] == "bup":
-            attr = args[2]
+            submode = args[2]
+            attr = args[3]
             if T[attr] < t:
                 T[attr] = t
-                gamepad.release_button(
-                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                )
+                if submode == "special":
+                    gamepad.release_special_button(
+                        special_button=getattr(
+                            vgamepad.DS4_SPECIAL_BUTTONS, f"DS4_SPECIAL_BUTTON_{attr}"
+                        )
+                    )
+                elif submode == "normal":
+                    gamepad.release_button(
+                        button=getattr(vgamepad.DS4_BUTTONS, f"DS4_BUTTON_{attr}")
+                    )
+                else:
+                    log.warning(f"wrong submode {submode}")
+        elif args[1] == "dpad":
+            if T["dpad"] < t:
+                T["dpad"] = t
+                direction = int(args[2])
+                gamepad.directional_pad(vgamepad.DS4_DPAD_DIRECTIONS(direction))
         elif args[1] == "lstick":
             if T["lstick"] < t:
                 T["lstick"] = t

@@ -37,8 +37,22 @@ body {
   border-radius: 0%;
 }
 
+.button-dpad {
+  font-size: 300%;
+  font-weight: bold;
+}
+
+.button-dpad.button-dpad-center {
+  font-size: 100%;
+  font-weight: normal;
+}
+
 .button-down {
   background-color: #80ff80;
+}
+
+.button-down.button-dpad-center {
+  background-color: #d0ffd0;
 }
 
 .button-locked {
@@ -55,4 +69,8 @@ body {
 
 .button-pressed.button-down {
   background-color: #80ff80;
+}
+
+.button-pressed.button-down.button-dpad-center {
+  background-color: #d0ffd0;
 }
