@@ -48,3 +48,11 @@ body {
 .button-locked.button-down {
   background-color: #80c080;
 }
+
+.button-pressed {
+  background-color: #f0a0f0;
+}
+
+.button-pressed.button-down {
+  background-color: #80ff80;
+}

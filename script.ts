@@ -12,6 +12,8 @@ let macroStr = "";
 let macroIndex = 0;
 let macroTime: number | null = null;
 
+let keyPressed: Record<string, boolean> = {};
+
 function log(x: any): void {
   command(`L ${JSON.stringify(x)}`);
 }
@@ -60,15 +62,15 @@ function createButton(
   let Tracker = (down: boolean, x: number, y: number) => {};
   let TrackerUp = () => {};
   let TrackerDown = () => {};
-  let OnChange = () => {};
+  let OnInput = () => {};
   switch (mode) {
     case "button":
       {
         TrackerUp = () => {
-          command(`bup ${name}`);
+          keyUp(name);
         };
         TrackerDown = () => {
-          command(`bdown ${name}`);
+          keyDown(name);
         };
       }
       break;
@@ -120,12 +122,12 @@ function createButton(
       break;
     case "input":
       tagname = "input";
-      OnChange = () => {
+      OnInput = () => {
         const val = button.value;
         macroStr = "";
         for (const ch of val.split("")) {
           const chup = ch.toUpperCase();
-          if ("ABXY0".indexOf(chup) !== -1) {
+          if ("ABXY.".indexOf(chup) !== -1) {
             macroStr = macroStr.concat(chup);
           }
         }
@@ -137,10 +139,11 @@ function createButton(
           if (macroStr !== "") {
             macroIndex = 0;
             macroDown = false;
-            macroTime = setInterval(macroLoop, 50);
+            macroTime = setInterval(macroLoop, 100);
           }
         } else {
           clearInterval(macroTime);
+          ["A", "B", "X", "Y"].forEach((sym) => keyUp(sym));
           macroTime = null;
         }
         updateButtonColor();
@@ -214,7 +217,7 @@ function createButton(
     button.addEventListener("touchend", touchTracker);
   }
   if (button instanceof HTMLInputElement) {
-    button.addEventListener("change", OnChange);
+    button.addEventListener("input", OnInput, true);
   }
 
   document.body.appendChild(button);
@@ -442,43 +445,53 @@ function toggleKeyRepeat(key: string) {
   const keyState = turboKeys[key];
   if (keyState.timer !== null) {
     clearTimeout(keyState.timer);
+    keyUp(key);
     keyState.timer = null;
   }
   keyState.enabled = !keyState.enabled;
   if (keyState.enabled) {
-    keyDown(key);
+    turboKeyDown(key);
   }
   updateButtonColor();
 }
 
 function keyDown(key: string) {
   command(`bdown ${key}`);
-  const keyState = turboKeys[key];
-  keyState.timer = setTimeout(() => keyUp(key), 50);
+  keyPressed[key] = true;
+  updateButtonColor();
 }
-
 function keyUp(key: string) {
   command(`bup ${key}`);
+  keyPressed[key] = false;
+  updateButtonColor();
+}
+function turboKeyDown(key: string) {
+  keyDown(key);
+  const turboKeyState = turboKeys[key];
+  turboKeyState.timer = setTimeout(() => turboKeyUp(key), 100);
+}
+
+function turboKeyUp(key: string) {
+  keyUp(key);
   const keyState = turboKeys[key];
-  keyState.timer = setTimeout(() => keyDown(key), 50);
+  keyState.timer = setTimeout(() => turboKeyDown(key), 100);
 }
 
 function macroLoop() {
   if (macroIndex >= macroStr.length) {
     macroIndex = 0;
-    macroLoop();
   }
   const macroChar = macroStr[macroIndex];
   if (macroDown) {
-    if (macroChar !== "0") {
-      command(`bup ${macroChar}`);
+    if (macroChar !== ".") {
+      keyUp(macroChar);
     }
     macroIndex++;
     macroDown = false;
   } else {
-    if (macroChar !== "0") {
-      log(`Press ${macroChar}`);
-      command(`bdown ${macroChar}`);
+    if (macroChar !== ".") {
+      keyDown(macroChar);
+      keyPressed[macroChar] = true;
     }
     macroDown = true;
   }
@@ -495,6 +508,15 @@ function updateButtonColor() {
       } else {
         button.classList.remove("button-locked");
       }
+    }
+  });
+  ["A:", "B:", "X:", "Y:"].forEach((sym) => {
+    const key = sym.slice(0, -1);
+    const button = buttonNamed[sym];
+    if (keyPressed[key]) {
+      button.classList.add("button-pressed");
+    } else {
+      button.classList.remove("button-pressed");
     }
   });
   const bMA = buttonNamed["MA"];
