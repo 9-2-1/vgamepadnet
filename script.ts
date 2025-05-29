@@ -281,7 +281,9 @@ function vibration() {
     }
   }
   // log(`peak: ${peakVibratePower}`);
-  navigator.vibrate(a);
+  if (navigator.vibrate) {
+    navigator.vibrate(a);
+  }
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
 }
@@ -445,7 +447,7 @@ function wsConnect() {
     mainWebsocket = null;
     mainWebsocketColor = "#FF8080";
     updateButtonColor();
-    setTimeout(wsConnect, 1000);
+    setTimeout(wsConnect, 5000);
   });
   nextWebsocket.addEventListener("message", (event) => {
     const msg = event.data;
