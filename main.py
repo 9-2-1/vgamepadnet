@@ -1,19 +1,29 @@
 import vgamepad
+import base64
 import logging
 import traceback
 import asyncio
 import socket
+import os
 from aiohttp import web, WSMsgType
 from collections import defaultdict
 from typing import Dict, Union, Optional
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.WARNING)
+logging.basicConfig(level=logging.INFO)
 
 vibrate: int = 0
 vibrate_peak: int = 0
 
 globalws: Optional[web.WebSocketResponse] = None
+
+try:
+    with open("path_prefix.txt", "r") as f:
+        path_prefix = f.read().strip()
+except FileNotFoundError:
+    path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
+    with open("path_prefix.txt", "w") as f:
+        f.write(path_prefix)
 
 
 def update_status(client, target, large_motor, small_motor, led_number, user_data):
@@ -35,14 +45,14 @@ gamepad.register_notification(update_status)
 routes = web.RouteTableDef()
 
 
-@routes.get("/")
+@routes.get(f"/{path_prefix}/")
 async def static_main_html(request: web.Request) -> web.Response:
     with open("main.html", "rb") as f:
         content = f.read()
         return web.Response(body=content, charset="utf-8", content_type="text/html")
 
 
-@routes.get("/script.js")
+@routes.get(f"/{path_prefix}/script.js")
 async def static_script_js(request: web.Request) -> web.Response:
     with open("script.js", "rb") as f:
         content = f.read()
@@ -51,7 +61,7 @@ async def static_script_js(request: web.Request) -> web.Response:
         )
 
 
-@routes.get("/style.css")
+@routes.get(f"/{path_prefix}/style.css")
 async def static_style_css(request: web.Request) -> web.Response:
     with open("style.css", "rb") as f:
         content = f.read()
@@ -60,7 +70,7 @@ async def static_style_css(request: web.Request) -> web.Response:
         )
 
 
-@routes.post("/command")
+@routes.post(f"/{path_prefix}/command")
 async def post_command(request: web.Request) -> web.Response:
     cmds = await request.text()
     gamepad_commands(cmds)
@@ -74,7 +84,7 @@ def gamepad_commands(cmds: str) -> None:
     gamepad.update()
 
 
-@routes.post("/vibrate")
+@routes.post(f"/{path_prefix}/vibrate")
 async def post_vibrate(request: web.Request) -> web.Response:
     global vibrate_peak
     reply = str(vibrate_peak)
@@ -82,7 +92,7 @@ async def post_vibrate(request: web.Request) -> web.Response:
     return web.Response(text=reply)
 
 
-@routes.get("/websocket")
+@routes.get(f"/{path_prefix}/websocket")
 async def get_websocket(
     request: web.Request,
 ) -> Union[web.WebSocketResponse, web.Response]:
@@ -105,7 +115,7 @@ async def get_websocket(
     return ws
 
 
-@routes.post("/log")
+@routes.post(f"/{path_prefix}/log")
 async def post_log(request: web.Request) -> web.Response:
     logstr = await request.text()
     log.info(logstr)
@@ -165,6 +175,6 @@ def gamepad_command(cmd: str) -> None:
 app = web.Application()
 app.add_routes(routes)
 for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-    print(f"http://{ipaddr}:35714/")
+    print(f"http://{ipaddr}:35714/{path_prefix}/")
 
 web.run_app(app, port=35714)

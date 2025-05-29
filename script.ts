@@ -7,6 +7,11 @@ let mainWebsocketColor = "#808080";
 let vibratePower = 0;
 let peakVibratePower = 0;
 
+let macroDown = false;
+let macroStr = "";
+let macroIndex = 0;
+let macroTime: number | null = null;
+
 function log(x: any): void {
   command(`L ${JSON.stringify(x)}`);
 }
@@ -25,8 +30,15 @@ function command(x: string): void {
   }
 }
 
-type ButtonMode = "button" | "stick" | "trigger" | "fullscreen" | "special";
-const specialKeys: {
+type ButtonMode =
+  | "button"
+  | "stick"
+  | "trigger"
+  | "fullscreen"
+  | "turbo"
+  | "input"
+  | "macro";
+const turboKeys: {
   [key: string]: { enabled: boolean; timer: number | null };
 } = {
   A: { enabled: false, timer: null },
@@ -44,18 +56,11 @@ function createButton(
   height: number,
   width: number,
 ) {
-  const button = document.createElement("button");
-  button.classList.add("button");
-  button.classList.add(`button-${mode}`);
-  button.textContent = label;
-  button.style.top = `${top}px`;
-  button.style.left = `${left}px`;
-  button.style.height = `${height}px`;
-  button.style.width = `${width}px`;
-
+  let tagname: "input" | "button" = "button";
   let Tracker = (down: boolean, x: number, y: number) => {};
   let TrackerUp = () => {};
   let TrackerDown = () => {};
+  let OnChange = () => {};
   switch (mode) {
     case "button":
       {
@@ -70,7 +75,7 @@ function createButton(
     case "stick":
       {
         Tracker = (down: boolean, x: number, y: number) => {
-          log(`${x}, ${y}`);
+          // log(`${x}, ${y}`);
           if (down) {
             x = 2 * x - 1;
             y = -(2 * y - 1);
@@ -108,68 +113,109 @@ function createButton(
         toggleFullScreen();
       };
       break;
-    case "special":
+    case "turbo":
       TrackerDown = () => {
         toggleKeyRepeat(name);
       };
       break;
+    case "input":
+      tagname = "input";
+      OnChange = () => {
+        const val = button.value;
+        macroStr = "";
+        for (const ch of val.split("")) {
+          const chup = ch.toUpperCase();
+          if ("ABXY0".indexOf(chup) !== -1) {
+            macroStr = macroStr.concat(chup);
+          }
+        }
+      };
+      break;
+    case "macro":
+      TrackerDown = () => {
+        if (macroTime === null) {
+          if (macroStr !== "") {
+            macroIndex = 0;
+            macroDown = false;
+            macroTime = setInterval(macroLoop, 50);
+          }
+        } else {
+          clearInterval(macroTime);
+          macroTime = null;
+        }
+        updateButtonColor();
+      };
+      break;
   }
 
-  let oldDown = false;
-  const TrackerRawPos = (down: boolean, x: number, y: number) => {
-    if (down != oldDown) {
-      if (down) {
-        button.classList.add("button-down");
-        TrackerDown();
-      } else {
-        button.classList.remove("button-down");
-        TrackerUp();
+  const button = document.createElement(tagname);
+  button.classList.add("button");
+  button.classList.add(`button-${mode}`);
+  button.textContent = label;
+  button.style.top = `${top}px`;
+  button.style.left = `${left}px`;
+  button.style.height = `${height}px`;
+  button.style.width = `${width}px`;
+  if (button instanceof HTMLButtonElement) {
+    let oldDown = false;
+    const TrackerRawPos = (down: boolean, x: number, y: number) => {
+      if (down != oldDown) {
+        if (down) {
+          button.classList.add("button-down");
+          TrackerDown();
+        } else {
+          button.classList.remove("button-down");
+          TrackerUp();
+        }
+        oldDown = down;
       }
-      oldDown = down;
-    }
-    Tracker(down, (x - left) / width, (y - top) / height);
-  };
+      Tracker(down, (x - left) / width, (y - top) / height);
+    };
 
-  const mouseMoveTracker = (ev: MouseEvent) => {
-    TrackerRawPos(true, ev.clientX, ev.clientY);
-    ev.preventDefault();
-    ev.stopPropagation();
-  };
-  const mouseUpTracker = (ev: MouseEvent) => {
-    TrackerRawPos(false, ev.clientX, ev.clientY);
-    window.removeEventListener("mousemove", mouseMoveTracker);
-    window.removeEventListener("mouseup", mouseUpTracker);
-    ev.preventDefault();
-    ev.stopPropagation();
-  };
-  const touchTracker = (ev: TouchEvent) => {
-    if (ev.targetTouches.length == 0) {
-      TrackerRawPos(false, 0, 0);
-    } else {
-      let x = 0;
-      let y = 0;
-      let n = 0;
-      for (let i = 0; i < ev.targetTouches.length; i++) {
-        const touch = ev.targetTouches[i];
-        x += touch.clientX;
-        y += touch.clientY;
-        n += 1;
+    const mouseMoveTracker = (ev: MouseEvent) => {
+      TrackerRawPos(true, ev.clientX, ev.clientY);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    const mouseUpTracker = (ev: MouseEvent) => {
+      TrackerRawPos(false, ev.clientX, ev.clientY);
+      window.removeEventListener("mousemove", mouseMoveTracker);
+      window.removeEventListener("mouseup", mouseUpTracker);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    const touchTracker = (ev: TouchEvent) => {
+      if (ev.targetTouches.length == 0) {
+        TrackerRawPos(false, 0, 0);
+      } else {
+        let x = 0;
+        let y = 0;
+        let n = 0;
+        for (let i = 0; i < ev.targetTouches.length; i++) {
+          const touch = ev.targetTouches[i];
+          x += touch.clientX;
+          y += touch.clientY;
+          n += 1;
+        }
+        TrackerRawPos(true, x / n, y / n);
       }
-      TrackerRawPos(true, x / n, y / n);
-    }
-    ev.preventDefault();
-    ev.stopPropagation();
-  };
-  button.addEventListener("mousedown", (ev) => {
-    TrackerRawPos(true, ev.clientX, ev.clientY);
-    window.addEventListener("mousemove", mouseMoveTracker);
-    window.addEventListener("mouseup", mouseUpTracker);
-    ev.preventDefault();
-    ev.stopPropagation();
-  });
-  button.addEventListener("touchstart", touchTracker);
-  button.addEventListener("touchmove", touchTracker);
-  button.addEventListener("touchend", touchTracker);
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+    button.addEventListener("mousedown", (ev) => {
+      TrackerRawPos(true, ev.clientX, ev.clientY);
+      window.addEventListener("mousemove", mouseMoveTracker);
+      window.addEventListener("mouseup", mouseUpTracker);
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    button.addEventListener("touchstart", touchTracker);
+    button.addEventListener("touchmove", touchTracker);
+    button.addEventListener("touchend", touchTracker);
+  }
+  if (button instanceof HTMLInputElement) {
+    button.addEventListener("change", OnChange);
+  }
 
   document.body.appendChild(button);
   return button;
@@ -227,7 +273,7 @@ function vibration() {
       }
     }
   }
-  log(`peak: ${peakVibratePower}`);
+  // log(`peak: ${peakVibratePower}`);
   navigator.vibrate(a);
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
@@ -258,7 +304,7 @@ const buttonmap = [
   "                                                                    A~          ",
   "                                                                                ",
   "                                                                                ",
-  "                                                                            []  ",
+  "                          IN                      MA                        []  ",
   "                                                                                ",
 ];
 const buttonname: Array<[string, string, string, ButtonMode, number]> = [
@@ -283,12 +329,14 @@ const buttonname: Array<[string, string, string, ButtonMode, number]> = [
   ["LT", "LT", "ltrig", "trigger", 3],
   ["RT", "RT", "rtrig", "trigger", 3],
   ["[]", "⛶", "", "fullscreen", 3],
-  ["A~", "[A]", "A", "special", 3],
-  ["B~", "[B]", "B", "special", 3],
-  ["X~", "[X]", "X", "special", 3],
-  ["Y~", "[Y]", "Y", "special", 3],
+  ["A~", "[A]", "A", "turbo", 3],
+  ["B~", "[B]", "B", "turbo", 3],
+  ["X~", "[X]", "X", "turbo", 3],
+  ["Y~", "[Y]", "Y", "turbo", 3],
+  ["IN", "", "", "input", 3],
+  ["MA", "▶", "", "macro", 3],
 ];
-let buttonNamed = {};
+let buttonNamed: Record<string, HTMLElement> = {};
 
 function reload() {
   document.querySelectorAll(".button").forEach((element) => {
@@ -342,7 +390,7 @@ function reload() {
             buttonY - (size * buttonA) / 2,
             buttonX - (size * buttonA) / 2,
             size * buttonA,
-            size * buttonA,
+            mode == "input" ? size * 4 * buttonA : size * buttonA,
           );
         }
       }
@@ -352,8 +400,8 @@ function reload() {
 }
 
 function wsConnect() {
-  const hostPort = window.location.host;
-  const nextWebsocket = new WebSocket(`ws://${hostPort}/websocket`);
+  const cwd = window.location.host + window.location.pathname;
+  const nextWebsocket = new WebSocket(`ws://${cwd}websocket`);
   mainWebsocketColor = "#F0F080";
   updateButtonColor();
   nextWebsocket.addEventListener("open", (event) => {
@@ -391,7 +439,7 @@ function wsConnect() {
   });
 }
 function toggleKeyRepeat(key: string) {
-  const keyState = specialKeys[key];
+  const keyState = turboKeys[key];
   if (keyState.timer !== null) {
     clearTimeout(keyState.timer);
     keyState.timer = null;
@@ -405,14 +453,35 @@ function toggleKeyRepeat(key: string) {
 
 function keyDown(key: string) {
   command(`bdown ${key}`);
-  const keyState = specialKeys[key];
+  const keyState = turboKeys[key];
   keyState.timer = setTimeout(() => keyUp(key), 50);
 }
 
 function keyUp(key: string) {
   command(`bup ${key}`);
-  const keyState = specialKeys[key];
+  const keyState = turboKeys[key];
   keyState.timer = setTimeout(() => keyDown(key), 50);
+}
+
+function macroLoop() {
+  if (macroIndex >= macroStr.length) {
+    macroIndex = 0;
+    macroLoop();
+  }
+  const macroChar = macroStr[macroIndex];
+  if (macroDown) {
+    if (macroChar !== "0") {
+      command(`bup ${macroChar}`);
+    }
+    macroIndex++;
+    macroDown = false;
+  } else {
+    if (macroChar !== "0") {
+      log(`Press ${macroChar}`);
+      command(`bdown ${macroChar}`);
+    }
+    macroDown = true;
+  }
 }
 
 function updateButtonColor() {
@@ -421,13 +490,25 @@ function updateButtonColor() {
     const key = sym.slice(0, -1);
     const button = buttonNamed[sym];
     if (button) {
-      if (specialKeys[key].enabled) {
+      if (turboKeys[key].enabled) {
         button.classList.add("button-locked");
       } else {
         button.classList.remove("button-locked");
       }
     }
   });
+  const bMA = buttonNamed["MA"];
+  const bIN = buttonNamed["IN"];
+  if (bIN instanceof HTMLInputElement) {
+    if (macroTime === null) {
+      bMA.classList.remove("button-locked");
+      bIN.disabled = false;
+    } else {
+      bMA.classList.add("button-locked");
+      bIN.disabled = true;
+    }
+    bIN.value = macroStr;
+  }
 }
 window.addEventListener("load", () => {
   reload();
