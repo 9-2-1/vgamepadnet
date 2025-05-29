@@ -1,3 +1,3 @@
 @echo off
-call conda activate vgamepad
+call .venv\Scripts\activate.bat
 python main.py

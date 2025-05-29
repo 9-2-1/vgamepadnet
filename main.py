@@ -1,20 +1,31 @@
 import vgamepad
+import logging
 import traceback
-from aiohttp import web
+import asyncio
+import socket
+from aiohttp import web, WSMsgType
 from collections import defaultdict
-from typing import Dict, Any
+from typing import Dict, Union, Optional
+
+log = logging.getLogger(__name__)
+logging.basicConfig(level=logging.WARNING)
 
 vibrate: int = 0
 vibrate_peak: int = 0
+
+globalws: Optional[web.WebSocketResponse] = None
 
 
 def update_status(client, target, large_motor, small_motor, led_number, user_data):
     global vibrate
     global vibrate_peak
-    vibrate = (large_motor + small_motor) / 2 / 255
+    global globalws
+    vibrate = max(large_motor, small_motor) / 255
     if vibrate_peak < vibrate:
         vibrate_peak = vibrate
-    print(f"vibrate: {vibrate}")
+    log.debug(f"< vibrate {vibrate}")
+    if globalws is not None:
+        asyncio.run(globalws.send_str(f"vibrate {vibrate}"))
 
 
 gamepad = vgamepad.VX360Gamepad()
@@ -52,12 +63,15 @@ async def static_style_css(request: web.Request) -> web.Response:
 @routes.post("/command")
 async def post_command(request: web.Request) -> web.Response:
     cmds = await request.text()
-    for cmd in cmds.split("\n"):
-        print(">", cmd)
-        gamepad_command(cmd)
-    print("o")
-    gamepad.update()
+    gamepad_commands(cmds)
     return web.Response()
+
+
+def gamepad_commands(cmds: str) -> None:
+    for cmd in cmds.split("\n"):
+        log.debug(f"> {cmd}")
+        gamepad_command(cmd)
+    gamepad.update()
 
 
 @routes.post("/vibrate")
@@ -68,10 +82,33 @@ async def post_vibrate(request: web.Request) -> web.Response:
     return web.Response(text=reply)
 
 
+@routes.get("/websocket")
+async def get_websocket(
+    request: web.Request,
+) -> Union[web.WebSocketResponse, web.Response]:
+    global globalws
+    if globalws is not None:
+        return web.Response(status=403, text="Already connected")
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    globalws = ws
+
+    try:
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                gamepad_commands(msg.data)
+            elif msg.type == WSMsgType.ERROR:
+                log.error("ws connection closed with exception %s" % ws.exception())
+    finally:
+        globalws = None
+
+    return ws
+
+
 @routes.post("/log")
 async def post_log(request: web.Request) -> web.Response:
     logstr = await request.text()
-    print("L", logstr)
+    log.info(logstr)
     return web.Response()
 
 
@@ -119,10 +156,15 @@ def gamepad_command(cmd: str) -> None:
         elif args[1] == "reset":
             gamepad.reset()
             T.clear()
+        elif args[1] == "L":
+            log.info(cmd[cmd.find("L ") + 2 :])
     except Exception:
         traceback.print_exc()
 
 
 app = web.Application()
 app.add_routes(routes)
-web.run_app(app, port=8000)
+for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
+    print(f"http://{ipaddr}:35714/")
+
+web.run_app(app, port=35714)

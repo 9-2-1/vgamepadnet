@@ -8,11 +8,18 @@ body {
   position: relative;
   align-content: center;
   text-align: center;
-  background-color: #777777;
+  background-color: #808080;
   user-select: none;
+  overflow: hidden;
 }
 
-.joybutton {
+.gridline {
+  position: absolute;
+  background-color: #ffffff;
+  border: 0.5px solid #888888;
+}
+
+.button {
   position: absolute;
   background-color: #ffffff;
   color: black;
@@ -21,15 +28,14 @@ body {
   border-radius: 100%;
 }
 
-.joystick {
-  position: absolute;
-  background-color: #ffffff;
-  color: black;
-  align-content: center;
-  text-align: center;
-  border-radius: 100%;
+.button-down {
+  background-color: #80ff80;
 }
 
-.down {
-  background-color: #00ff00;
+.button-locked {
+  background-color: #80c0ff;
+}
+
+.button-locked.button-down {
+  background-color: #80c080;
 }
