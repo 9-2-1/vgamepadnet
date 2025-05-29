@@ -9,10 +9,15 @@ let peakVibratePower = 0;
 
 let macroDown = false;
 let macroStr = "";
+let macroSteps: Array<string> = [];
 let macroIndex = 0;
 let macroTime: number | null = null;
 
-let keyPressed: Record<string, boolean> = {};
+let buttonPressed: Record<string, boolean> = {};
+let textToButtonTable: Record<
+  string,
+  [string, string, string, ButtonMode, number]
+> = {};
 
 function log(x: any): void {
   command(`L ${JSON.stringify(x)}`);
@@ -40,19 +45,20 @@ type ButtonMode =
   | "turbo"
   | "input"
   | "macro";
-const turboKeys: {
-  [key: string]: { enabled: boolean; timer: number | null };
+const turboButtons: {
+  [symbol: string]: { enabled: boolean; timer: number | null };
 } = {
-  A: { enabled: false, timer: null },
-  B: { enabled: false, timer: null },
-  X: { enabled: false, timer: null },
-  Y: { enabled: false, timer: null },
+  "A:": { enabled: false, timer: null },
+  "B:": { enabled: false, timer: null },
+  "X:": { enabled: false, timer: null },
+  "Y:": { enabled: false, timer: null },
 };
 
 function createButton(
   mode: ButtonMode,
   label: string,
   name: string,
+  symbol: string,
   top: number,
   left: number,
   height: number,
@@ -67,10 +73,10 @@ function createButton(
     case "button":
       {
         TrackerUp = () => {
-          keyUp(name);
+          buttonUp(symbol);
         };
         TrackerDown = () => {
-          keyDown(name);
+          buttonDown(symbol);
         };
       }
       break;
@@ -117,20 +123,15 @@ function createButton(
       break;
     case "turbo":
       TrackerDown = () => {
-        toggleKeyRepeat(name);
+        toggleButtonRepeat(name[0] + ":");
       };
       break;
     case "input":
       tagname = "input";
       OnInput = () => {
-        const val = button.value;
-        macroStr = "";
-        for (const ch of val.split("")) {
-          const chup = ch.toUpperCase();
-          if ("ABXY.".indexOf(chup) !== -1) {
-            macroStr = macroStr.concat(chup);
-          }
-        }
+        const val = button.value.trim();
+        macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
+        macroStr = macroSteps.join(" ");
       };
       break;
     case "macro":
@@ -143,7 +144,9 @@ function createButton(
           }
         } else {
           clearInterval(macroTime);
-          ["A", "B", "X", "Y"].forEach((sym) => keyUp(sym));
+          if (macroDown) {
+            buttonUp(macroSteps[macroIndex]);
+          }
           macroTime = null;
         }
         updateButtonColor();
@@ -310,7 +313,7 @@ const buttonmap = [
   "                          IN                      MA                        []  ",
   "                                                                                ",
 ];
-const buttonname: Array<[string, string, string, ButtonMode, number]> = [
+const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
   // [Symbol, Label, Name, Type, Size]
   ["A:", "A", "A", "button", 3],
   ["B:", "B", "B", "button", 3],
@@ -383,18 +386,23 @@ function reload() {
       }
       const buttonX = buttonXoffset + j * buttonA + buttonA / 2;
       const buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-      for (let k = 0; k < buttonname.length; k++) {
-        const [sym, label, name, mode, size] = buttonname[k];
-        if (sym == symb) {
-          buttonNamed[sym] = createButton(
+      for (let k = 0; k < buttonTable.length; k++) {
+        const [symbol, label, name, mode, size] = buttonTable[k];
+        if (symbol == symb) {
+          buttonNamed[symbol] = createButton(
             mode,
             label,
             name,
+            symbol,
             buttonY - (size * buttonA) / 2,
             buttonX - (size * buttonA) / 2,
             size * buttonA,
             mode == "input" ? size * 4 * buttonA : size * buttonA,
           );
+          if (mode == "button") {
+            textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
+            textToButtonTable[label.toUpperCase()] = buttonTable[k];
+          }
         }
       }
     }
@@ -441,57 +449,70 @@ function wsConnect() {
     }
   });
 }
-function toggleKeyRepeat(key: string) {
-  const keyState = turboKeys[key];
-  if (keyState.timer !== null) {
-    clearTimeout(keyState.timer);
-    keyUp(key);
-    keyState.timer = null;
+function toggleButtonRepeat(symbol: string) {
+  const buttonState = turboButtons[symbol];
+  if (buttonState.timer !== null) {
+    clearTimeout(buttonState.timer);
+    buttonState.timer = null;
+    buttonUp(symbol);
   }
-  keyState.enabled = !keyState.enabled;
-  if (keyState.enabled) {
-    turboKeyDown(key);
+  buttonState.enabled = !buttonState.enabled;
+  if (buttonState.enabled) {
+    turboButtonDown(symbol);
   }
   updateButtonColor();
 }
 
-function keyDown(key: string) {
-  command(`bdown ${key}`);
-  keyPressed[key] = true;
-  updateButtonColor();
+function buttonDown(text: string) {
+  const button = textToButtonTable[text.toUpperCase()];
+  if (button) {
+    const symbol = button[0];
+    const name = button[2];
+    command(`bdown ${name}`);
+    buttonPressed[symbol] = true;
+    updateButtonColor();
+  } else {
+    console.warn(`Unknown button ${text}`);
+  }
 }
-function keyUp(key: string) {
-  command(`bup ${key}`);
-  keyPressed[key] = false;
-  updateButtonColor();
+function buttonUp(text: string) {
+  const button = textToButtonTable[text.toUpperCase()];
+  if (button) {
+    const symbol = button[0];
+    const name = button[2];
+    command(`bup ${name}`);
+    buttonPressed[symbol] = false;
+    updateButtonColor();
+  } else {
+    console.warn(`Unknown button ${text}`);
+  }
 }
-function turboKeyDown(key: string) {
-  keyDown(key);
-  const turboKeyState = turboKeys[key];
-  turboKeyState.timer = setTimeout(() => turboKeyUp(key), 100);
+function turboButtonDown(symbol: string) {
+  buttonDown(symbol);
+  const buttonState = turboButtons[symbol];
+  buttonState.timer = setTimeout(() => turboButtonUp(symbol), 100);
 }
 
-function turboKeyUp(key: string) {
-  keyUp(key);
-  const keyState = turboKeys[key];
-  keyState.timer = setTimeout(() => turboKeyDown(key), 100);
+function turboButtonUp(symbol: string) {
+  buttonUp(symbol);
+  const buttonState = turboButtons[symbol];
+  buttonState.timer = setTimeout(() => turboButtonDown(symbol), 100);
 }
 
 function macroLoop() {
-  if (macroIndex >= macroStr.length) {
+  if (macroIndex >= macroSteps.length) {
     macroIndex = 0;
   }
-  const macroChar = macroStr[macroIndex];
+  const step = macroSteps[macroIndex];
   if (macroDown) {
-    if (macroChar !== ".") {
-      keyUp(macroChar);
+    if (step !== ".") {
+      buttonUp(step);
     }
     macroIndex++;
     macroDown = false;
   } else {
-    if (macroChar !== ".") {
-      keyDown(macroChar);
-      keyPressed[macroChar] = true;
+    if (step !== ".") {
+      buttonDown(step);
     }
     macroDown = true;
   }
@@ -499,21 +520,18 @@ function macroLoop() {
 
 function updateButtonColor() {
   buttonNamed["GU"].style.backgroundColor = mainWebsocketColor;
-  ["A~", "B~", "X~", "Y~"].forEach((sym) => {
-    const key = sym.slice(0, -1);
+  Object.keys(buttonNamed).forEach((sym) => {
     const button = buttonNamed[sym];
-    if (button) {
-      if (turboKeys[key].enabled) {
+    if (sym[1] == "~") {
+      // turbo button
+      const tsym = sym[0] + ":";
+      if (turboButtons[tsym].enabled) {
         button.classList.add("button-locked");
       } else {
         button.classList.remove("button-locked");
       }
     }
-  });
-  ["A:", "B:", "X:", "Y:"].forEach((sym) => {
-    const key = sym.slice(0, -1);
-    const button = buttonNamed[sym];
-    if (keyPressed[key]) {
+    if (buttonPressed[sym]) {
       button.classList.add("button-pressed");
     } else {
       button.classList.remove("button-pressed");

@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Dict, Union, Optional
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
 vibrate: int = 0
 vibrate_peak: int = 0
