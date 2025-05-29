@@ -260,9 +260,10 @@ function vibration() {
   if (peakVibratePower == 0) {
     a.push(0);
   } else {
+    const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.6;
     let d = 0;
     for (let i = 0; i < 50; i++) {
-      d += 10 * peakVibratePower;
+      d += 10 * fixedPower;
       let p = Math.floor(d);
       d -= p;
       if (p > 10) {
@@ -345,6 +346,10 @@ const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
 let buttonNamed: Record<string, HTMLElement> = {};
 
 function reload() {
+  if (document.activeElement instanceof HTMLInputElement) {
+    // Don't reload while typing
+    return;
+  }
   document.querySelectorAll(".button").forEach((element) => {
     element.remove();
   });
@@ -399,7 +404,7 @@ function reload() {
             size * buttonA,
             mode == "input" ? size * 4 * buttonA : size * buttonA,
           );
-          if (mode == "button") {
+          if (mode == "button" || mode == "trigger") {
             textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
             textToButtonTable[label.toUpperCase()] = buttonTable[k];
           }
@@ -407,6 +412,14 @@ function reload() {
       }
     }
   }
+  textToButtonTable["UP"] = textToButtonTable["DU"];
+  textToButtonTable["DOWN"] = textToButtonTable["DD"];
+  textToButtonTable["LEFT"] = textToButtonTable["DL"];
+  textToButtonTable["RIGHT"] = textToButtonTable["DR"];
+  textToButtonTable["^"] = textToButtonTable["DU"];
+  textToButtonTable["v"] = textToButtonTable["DD"];
+  textToButtonTable["<"] = textToButtonTable["DL"];
+  textToButtonTable[">"] = textToButtonTable["DR"];
   updateButtonColor();
 }
 
@@ -468,7 +481,14 @@ function buttonDown(text: string) {
   if (button) {
     const symbol = button[0];
     const name = button[2];
-    command(`bdown ${name}`);
+    const mode = button[3];
+    if (mode == "button") {
+      command(`bdown ${name}`);
+    } else if (mode == "trigger") {
+      command(`${name} 1`);
+    } else {
+      console.warn(`Unable to down button ${text}`);
+    }
     buttonPressed[symbol] = true;
     updateButtonColor();
   } else {
@@ -480,7 +500,14 @@ function buttonUp(text: string) {
   if (button) {
     const symbol = button[0];
     const name = button[2];
-    command(`bup ${name}`);
+    const mode = button[3];
+    if (mode == "button") {
+      command(`bup ${name}`);
+    } else if (mode == "trigger") {
+      command(`${name} 0`);
+    } else {
+      console.warn(`Unable to up button ${text}`);
+    }
     buttonPressed[symbol] = false;
     updateButtonColor();
   } else {
