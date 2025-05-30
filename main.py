@@ -20,12 +20,12 @@ globalws: Optional[web.WebSocketResponse] = None
 try:
     with open("path_prefix.txt", "r") as f:
         path_prefix = f.read().strip()
-        if len(path_prefix) != 16 or not all(
+        if len(path_prefix) != 8 or not all(
             ch in "234567abcdefghijklmnopqrstuvwxyz" for ch in path_prefix
         ):
             raise FileNotFoundError("Update format")
 except FileNotFoundError:
-    path_prefix = base64.b32encode(os.urandom(10)).decode("utf-8").lower()
+    path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
     with open("path_prefix.txt", "w") as f:
         f.write(path_prefix)
 
