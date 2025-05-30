@@ -261,9 +261,7 @@ function vibration() {
         }
     }
     // log(`peak: ${peakVibratePower}`);
-    if (navigator.vibrate) {
-        navigator.vibrate(a);
-    }
+    navigator === null || navigator === void 0 ? void 0 : navigator.vibrate(a);
     oldViberatePower = peakVibratePower;
     oldViberateCount = 0;
 }
@@ -553,8 +551,10 @@ window.addEventListener("contextmenu", function (event) {
 });
 command("reset");
 function toggleFullScreen() {
+    var _a, _b;
     if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
+        (_a = document.documentElement) === null || _a === void 0 ? void 0 : _a.requestFullscreen();
+        (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
     }
     else if (document.exitFullscreen) {
         document.exitFullscreen();

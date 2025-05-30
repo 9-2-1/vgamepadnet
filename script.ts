@@ -297,9 +297,7 @@ function vibration() {
     }
   }
   // log(`peak: ${peakVibratePower}`);
-  if (navigator.vibrate) {
-    navigator.vibrate(a);
-  }
+  navigator?.vibrate(a);
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
 }
@@ -605,7 +603,8 @@ command("reset");
 
 function toggleFullScreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
+    document.documentElement?.requestFullscreen();
+    screen?.orientation?.lock("landscape");
   } else if (document.exitFullscreen) {
     document.exitFullscreen();
   }
