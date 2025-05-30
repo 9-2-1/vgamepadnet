@@ -1,3 +1,4 @@
+"use strict";
 var commandId = 1;
 var commandList = [];
 var commandScheduled = false;
@@ -11,7 +12,7 @@ var macroSteps = [];
 var macroIndex = 0;
 var macroTime = null;
 var buttonPressed = {};
-var textToButtonTable = {};
+var textToSymbol = {};
 function log(x) {
     command("L ".concat(JSON.stringify(x)));
 }
@@ -105,7 +106,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                 };
             }
             break;
-        case "input":
+        case "macrobar":
             {
                 tagname = "input";
                 OnInput = function () {
@@ -115,7 +116,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                 };
             }
             break;
-        case "macro":
+        case "macroplay":
             {
                 TrackerDown = function () {
                     if (macroTime === null) {
@@ -128,7 +129,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                     else {
                         clearInterval(macroTime);
                         if (macroDown) {
-                            buttonUp(macroSteps[macroIndex]);
+                            macroLoop();
                         }
                         macroTime = null;
                     }
@@ -267,13 +268,6 @@ function vibration() {
     oldViberateCount = 0;
 }
 setInterval(vibration, 10);
-// const buttonmap = [
-//   "LT        GU  Y:B:RT",
-//   "LBLSL.        X:A:RB",
-//   "      BA    STRS  A~",
-//   "    DUDR      R.    ",
-//   "    DLDD          []",
-// ];
 var buttonmap = [
     "                                                                                ",
     "  LT                                  GU                                    RT  ",
@@ -294,7 +288,16 @@ var buttonmap = [
     "                          IN                      MA                        []  ",
     "                                                                                ",
 ];
-var buttonTable = [
+function parseButtonTable(table) {
+    var ret = {};
+    for (var _i = 0, table_1 = table; _i < table_1.length; _i++) {
+        var line = table_1[_i];
+        var symbol = line[0], label = line[1], name_1 = line[2], mode = line[3], size = line[4];
+        ret[symbol] = { label: label, name: name_1, mode: mode, size: size };
+    }
+    return ret;
+}
+var buttonTable = parseButtonTable([
     // [Symbol, Label, Name, Type, Size]
     ["A:", "A", "A", "button", 3],
     ["B:", "B", "B", "button", 3],
@@ -320,9 +323,9 @@ var buttonTable = [
     ["B~", "[B]", "B", "turbo", 3],
     ["X~", "[X]", "X", "turbo", 3],
     ["Y~", "[Y]", "Y", "turbo", 3],
-    ["IN", "", "", "input", 3],
-    ["MA", "▶", "", "macro", 3],
-];
+    ["IN", "", "", "macrobar", 3],
+    ["MA", "▶", "", "macroplay", 3],
+]);
 var buttonNamed = {};
 function reload() {
     if (document.activeElement instanceof HTMLInputElement) {
@@ -354,32 +357,29 @@ function reload() {
     // buttons
     for (var i = 0; i < buttonmap.length; i++) {
         for (var j = 0; j < buttonmap[i].length / 2; j++) {
-            var symb = buttonmap[i].slice(j * 2, j * 2 + 2);
-            if (symb == "  ") {
+            var symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
+            if (symbol == "  ") {
                 continue;
             }
             var buttonX = buttonXoffset + j * buttonA + buttonA / 2;
             var buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-            for (var k = 0; k < buttonTable.length; k++) {
-                var _a = buttonTable[k], symbol = _a[0], label = _a[1], name_1 = _a[2], mode = _a[3], size = _a[4];
-                if (symbol == symb) {
-                    buttonNamed[symbol] = createButton(mode, label, name_1, symbol, buttonY - (size * buttonA) / 2, buttonX - (size * buttonA) / 2, size * buttonA, mode == "input" ? size * 4 * buttonA : size * buttonA);
-                    if (mode == "button" || mode == "trigger") {
-                        textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
-                        textToButtonTable[label.toUpperCase()] = buttonTable[k];
-                    }
-                }
+            var attr = buttonTable[symbol];
+            if (attr) {
+                buttonNamed[symbol] = createButton(attr.mode, attr.label, attr.name, symbol, buttonY - (attr.size * buttonA) / 2, buttonX - (attr.size * buttonA) / 2, attr.size * buttonA, attr.mode == "macrobar"
+                    ? attr.size * 4 * buttonA
+                    : attr.size * buttonA);
+                textToSymbol[attr.label] = symbol;
             }
         }
     }
-    textToButtonTable["UP"] = textToButtonTable["DU"];
-    textToButtonTable["DOWN"] = textToButtonTable["DD"];
-    textToButtonTable["LEFT"] = textToButtonTable["DL"];
-    textToButtonTable["RIGHT"] = textToButtonTable["DR"];
-    textToButtonTable["^"] = textToButtonTable["DU"];
-    textToButtonTable["v"] = textToButtonTable["DD"];
-    textToButtonTable["<"] = textToButtonTable["DL"];
-    textToButtonTable[">"] = textToButtonTable["DR"];
+    textToSymbol["UP"] = "DU";
+    textToSymbol["DOWN"] = "DD";
+    textToSymbol["LEFT"] = "DL";
+    textToSymbol["RIGHT"] = "DR";
+    textToSymbol["^"] = "DU";
+    textToSymbol["v"] = "DD";
+    textToSymbol["<"] = "DL";
+    textToSymbol[">"] = "DR";
     updateButtonColor();
 }
 function wsConnect() {
@@ -435,48 +435,42 @@ function toggleButtonRepeat(symbol) {
     }
     updateButtonColor();
 }
-function buttonDown(text) {
-    var button = textToButtonTable[text.toUpperCase()];
-    if (button) {
-        var symbol = button[0];
-        var name_2 = button[2];
-        var mode = button[3];
-        if (mode == "button") {
-            command("bdown ".concat(name_2));
+function buttonDown(symbol) {
+    var attr = buttonTable[symbol];
+    if (attr) {
+        if (attr.mode == "button") {
+            command("bdown ".concat(attr.name));
         }
-        else if (mode == "trigger") {
-            command("".concat(name_2, " 1"));
+        else if (attr.mode == "trigger") {
+            command("".concat(attr.name, " 1"));
         }
         else {
-            console.warn("Unable to down button ".concat(text));
+            console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = true;
         updateButtonColor();
     }
     else {
-        console.warn("Unknown button ".concat(text));
+        console.warn("Unknown button ".concat(symbol));
     }
 }
-function buttonUp(text) {
-    var button = textToButtonTable[text.toUpperCase()];
-    if (button) {
-        var symbol = button[0];
-        var name_3 = button[2];
-        var mode = button[3];
-        if (mode == "button") {
-            command("bup ".concat(name_3));
+function buttonUp(symbol) {
+    var attr = buttonTable[symbol];
+    if (attr) {
+        if (attr.mode == "button") {
+            command("bup ".concat(attr.name));
         }
-        else if (mode == "trigger") {
-            command("".concat(name_3, " 0"));
+        else if (attr.mode == "trigger") {
+            command("".concat(attr.name, " 0"));
         }
         else {
-            console.warn("Unable to up button ".concat(text));
+            console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = false;
         updateButtonColor();
     }
     else {
-        console.warn("Unknown button ".concat(text));
+        console.warn("Unknown button ".concat(symbol));
     }
 }
 function turboButtonDown(symbol) {
@@ -494,6 +488,10 @@ function macroLoop() {
         macroIndex = 0;
     }
     var step = macroSteps[macroIndex];
+    step = step.toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
+        step = textToSymbol[step];
+    }
     if (macroDown) {
         if (step !== ".") {
             buttonUp(step);

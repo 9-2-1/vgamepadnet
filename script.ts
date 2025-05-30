@@ -13,11 +13,16 @@ let macroSteps: Array<string> = [];
 let macroIndex = 0;
 let macroTime: number | null = null;
 
+type ButtonTableRaw = [string, string, string, ButtonMode, number];
+type ButtonAttr = {
+  label: string;
+  name: string;
+  mode: ButtonMode;
+  size: number;
+};
+type ButtonTable = Record<string, ButtonAttr>;
 let buttonPressed: Record<string, boolean> = {};
-let textToButtonTable: Record<
-  string,
-  [string, string, string, ButtonMode, number]
-> = {};
+let textToSymbol: Record<string, string> = {};
 
 function log(x: any): void {
   command(`L ${JSON.stringify(x)}`);
@@ -43,8 +48,8 @@ type ButtonMode =
   | "trigger"
   | "fullscreen"
   | "turbo"
-  | "input"
-  | "macro";
+  | "macrobar"
+  | "macroplay";
 const turboButtons: {
   [symbol: string]: { enabled: boolean; timer: number | null };
 } = {
@@ -133,7 +138,7 @@ function createButton(
         };
       }
       break;
-    case "input":
+    case "macrobar":
       {
         tagname = "input";
         OnInput = () => {
@@ -143,7 +148,7 @@ function createButton(
         };
       }
       break;
-    case "macro":
+    case "macroplay":
       {
         TrackerDown = () => {
           if (macroTime === null) {
@@ -155,7 +160,7 @@ function createButton(
           } else {
             clearInterval(macroTime);
             if (macroDown) {
-              buttonUp(macroSteps[macroIndex]);
+              macroLoop();
             }
             macroTime = null;
           }
@@ -300,13 +305,6 @@ function vibration() {
 }
 
 setInterval(vibration, 10);
-// const buttonmap = [
-//   "LT        GU  Y:B:RT",
-//   "LBLSL.        X:A:RB",
-//   "      BA    STRS  A~",
-//   "    DUDR      R.    ",
-//   "    DLDD          []",
-// ];
 const buttonmap = [
   "                                                                                ",
   "  LT                                  GU                                    RT  ",
@@ -327,7 +325,15 @@ const buttonmap = [
   "                          IN                      MA                        []  ",
   "                                                                                ",
 ];
-const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
+function parseButtonTable(table: Array<ButtonTableRaw>): ButtonTable {
+  const ret: ButtonTable = {};
+  for (const line of table) {
+    const [symbol, label, name, mode, size] = line;
+    ret[symbol] = { label, name, mode, size };
+  }
+  return ret;
+}
+const buttonTable: ButtonTable = parseButtonTable([
   // [Symbol, Label, Name, Type, Size]
   ["A:", "A", "A", "button", 3],
   ["B:", "B", "B", "button", 3],
@@ -353,9 +359,9 @@ const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
   ["B~", "[B]", "B", "turbo", 3],
   ["X~", "[X]", "X", "turbo", 3],
   ["Y~", "[Y]", "Y", "turbo", 3],
-  ["IN", "", "", "input", 3],
-  ["MA", "▶", "", "macro", 3],
-];
+  ["IN", "", "", "macrobar", 3],
+  ["MA", "▶", "", "macroplay", 3],
+]);
 let buttonNamed: Record<string, HTMLElement> = {};
 
 function reload() {
@@ -398,41 +404,38 @@ function reload() {
   // buttons
   for (let i = 0; i < buttonmap.length; i++) {
     for (let j = 0; j < buttonmap[i].length / 2; j++) {
-      const symb = buttonmap[i].slice(j * 2, j * 2 + 2);
-      if (symb == "  ") {
+      const symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
+      if (symbol == "  ") {
         continue;
       }
       const buttonX = buttonXoffset + j * buttonA + buttonA / 2;
       const buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-      for (let k = 0; k < buttonTable.length; k++) {
-        const [symbol, label, name, mode, size] = buttonTable[k];
-        if (symbol == symb) {
-          buttonNamed[symbol] = createButton(
-            mode,
-            label,
-            name,
-            symbol,
-            buttonY - (size * buttonA) / 2,
-            buttonX - (size * buttonA) / 2,
-            size * buttonA,
-            mode == "input" ? size * 4 * buttonA : size * buttonA,
-          );
-          if (mode == "button" || mode == "trigger") {
-            textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
-            textToButtonTable[label.toUpperCase()] = buttonTable[k];
-          }
-        }
+      const attr = buttonTable[symbol];
+      if (attr) {
+        buttonNamed[symbol] = createButton(
+          attr.mode,
+          attr.label,
+          attr.name,
+          symbol,
+          buttonY - (attr.size * buttonA) / 2,
+          buttonX - (attr.size * buttonA) / 2,
+          attr.size * buttonA,
+          attr.mode == "macrobar"
+            ? attr.size * 4 * buttonA
+            : attr.size * buttonA,
+        );
+        textToSymbol[attr.label] = symbol;
       }
     }
   }
-  textToButtonTable["UP"] = textToButtonTable["DU"];
-  textToButtonTable["DOWN"] = textToButtonTable["DD"];
-  textToButtonTable["LEFT"] = textToButtonTable["DL"];
-  textToButtonTable["RIGHT"] = textToButtonTable["DR"];
-  textToButtonTable["^"] = textToButtonTable["DU"];
-  textToButtonTable["v"] = textToButtonTable["DD"];
-  textToButtonTable["<"] = textToButtonTable["DL"];
-  textToButtonTable[">"] = textToButtonTable["DR"];
+  textToSymbol["UP"] = "DU";
+  textToSymbol["DOWN"] = "DD";
+  textToSymbol["LEFT"] = "DL";
+  textToSymbol["RIGHT"] = "DR";
+  textToSymbol["^"] = "DU";
+  textToSymbol["v"] = "DD";
+  textToSymbol["<"] = "DL";
+  textToSymbol[">"] = "DR";
   updateButtonColor();
 }
 
@@ -489,42 +492,36 @@ function toggleButtonRepeat(symbol: string) {
   updateButtonColor();
 }
 
-function buttonDown(text: string) {
-  const button = textToButtonTable[text.toUpperCase()];
-  if (button) {
-    const symbol = button[0];
-    const name = button[2];
-    const mode = button[3];
-    if (mode == "button") {
-      command(`bdown ${name}`);
-    } else if (mode == "trigger") {
-      command(`${name} 1`);
+function buttonDown(symbol: string) {
+  const attr = buttonTable[symbol];
+  if (attr) {
+    if (attr.mode == "button") {
+      command(`bdown ${attr.name}`);
+    } else if (attr.mode == "trigger") {
+      command(`${attr.name} 1`);
     } else {
-      console.warn(`Unable to down button ${text}`);
+      console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = true;
     updateButtonColor();
   } else {
-    console.warn(`Unknown button ${text}`);
+    console.warn(`Unknown button ${symbol}`);
   }
 }
-function buttonUp(text: string) {
-  const button = textToButtonTable[text.toUpperCase()];
-  if (button) {
-    const symbol = button[0];
-    const name = button[2];
-    const mode = button[3];
-    if (mode == "button") {
-      command(`bup ${name}`);
-    } else if (mode == "trigger") {
-      command(`${name} 0`);
+function buttonUp(symbol: string) {
+  const attr = buttonTable[symbol];
+  if (attr) {
+    if (attr.mode == "button") {
+      command(`bup ${attr.name}`);
+    } else if (attr.mode == "trigger") {
+      command(`${attr.name} 0`);
     } else {
-      console.warn(`Unable to up button ${text}`);
+      console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = false;
     updateButtonColor();
   } else {
-    console.warn(`Unknown button ${text}`);
+    console.warn(`Unknown button ${symbol}`);
   }
 }
 function turboButtonDown(symbol: string) {
@@ -543,7 +540,11 @@ function macroLoop() {
   if (macroIndex >= macroSteps.length) {
     macroIndex = 0;
   }
-  const step = macroSteps[macroIndex];
+  let step = macroSteps[macroIndex];
+  step = step.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
+    step = textToSymbol[step];
+  }
   if (macroDown) {
     if (step !== ".") {
       buttonUp(step);
