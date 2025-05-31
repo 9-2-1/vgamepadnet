@@ -1,7 +1,3 @@
-let commandId = 1;
-let commandList: Array<string> = [];
-let commandScheduled = false;
-
 let mainWebsocket: WebSocket | null = null;
 let mainWebsocketColor = "#808080";
 let vibratePower = 0;
@@ -29,16 +25,8 @@ function log(x: any): void {
 }
 
 function command(x: string): void {
-  commandList.push(`${commandId++} ${x}`);
-  if (!commandScheduled) {
-    commandScheduled = true;
-    setTimeout(() => {
-      if (mainWebsocket !== null) {
-        mainWebsocket.send(commandList.join("\n"));
-        commandList = [];
-      }
-      commandScheduled = false;
-    }, 16);
+  if (mainWebsocket !== null) {
+    mainWebsocket.send(x);
   }
 }
 

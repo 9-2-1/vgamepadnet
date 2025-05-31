@@ -1,7 +1,3 @@
-"use strict";
-var commandId = 1;
-var commandList = [];
-var commandScheduled = false;
 var mainWebsocket = null;
 var mainWebsocketColor = "#808080";
 var vibratePower = 0;
@@ -17,16 +13,8 @@ function log(x) {
     command("L ".concat(JSON.stringify(x)));
 }
 function command(x) {
-    commandList.push("".concat(commandId++, " ").concat(x));
-    if (!commandScheduled) {
-        commandScheduled = true;
-        setTimeout(function () {
-            if (mainWebsocket !== null) {
-                mainWebsocket.send(commandList.join("\n"));
-                commandList = [];
-            }
-            commandScheduled = false;
-        }, 16);
+    if (mainWebsocket !== null) {
+        mainWebsocket.send(x);
     }
 }
 var turboButtons = {

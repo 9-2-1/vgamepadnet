@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Dict, Union, Optional
 
 log = logging.getLogger(__name__)
-# logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
+logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
 vibrate: int = 0
 vibrate_peak: int = 0
@@ -43,7 +43,6 @@ def update_status(client, target, large_motor, small_motor, led_number, user_dat
 
 
 gamepad = vgamepad.VX360Gamepad()
-T: Dict[str, int] = defaultdict(int)
 gamepad.register_notification(update_status)
 
 routes = web.RouteTableDef()
@@ -66,7 +65,7 @@ async def static_script_js(request: web.Request) -> web.Response:
 
 
 @routes.get(f"/{path_prefix}/nosleep.js")
-async def static_script_js(request: web.Request) -> web.Response:
+async def static_nosleep_js(request: web.Request) -> web.Response:
     with open("nosleep.js", "rb") as f:
         content = f.read()
         return web.Response(
@@ -92,9 +91,7 @@ async def post_command(request: web.Request) -> web.Response:
 
 def gamepad_commands(cmds: str) -> None:
     for cmd in cmds.split("\n"):
-        log.debug(f"> {cmd}")
         gamepad_command(cmd)
-    gamepad.update()
 
 
 @routes.post(f"/{path_prefix}/vibrate")
@@ -119,7 +116,7 @@ async def get_websocket(
     try:
         async for msg in ws:
             if msg.type == WSMsgType.TEXT:
-                gamepad_commands(msg.data)
+                gamepad_command(msg.data)
             elif msg.type == WSMsgType.ERROR:
                 log.error("ws connection closed with exception %s" % ws.exception())
     finally:
@@ -137,50 +134,46 @@ async def post_log(request: web.Request) -> web.Response:
 
 def gamepad_command(cmd: str) -> None:
     global gamepad
+    log.debug(f"> {cmd}")
     args = cmd.split(" ")
     try:
-        t = int(args[0])
-        if args[1] == "bdown":
-            attr = args[2]
-            if T[attr] < t:
-                T[attr] = t
-                gamepad.press_button(
-                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                )
-        elif args[1] == "bup":
-            attr = args[2]
-            if T[attr] < t:
-                T[attr] = t
-                gamepad.release_button(
-                    button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
-                )
-        elif args[1] == "lstick":
-            if T["lstick"] < t:
-                T["lstick"] = t
-                x = float(args[2])
-                y = float(args[3])
-                gamepad.left_joystick_float(x, y)
-        elif args[1] == "rstick":
-            if T["rstick"] < t:
-                T["rstick"] = t
-                x = float(args[2])
-                y = float(args[3])
-                gamepad.right_joystick_float(x, y)
-        elif args[1] == "ltrig":
-            if T["ltrig"] < t:
-                T["ltrig"] = t
-                x = float(args[2])
-                gamepad.left_trigger_float(x)
-        elif args[1] == "rtrig":
-            if T["rtrig"] < t:
-                T["rtrig"] = t
-                x = float(args[2])
-                gamepad.right_trigger_float(x)
-        elif args[1] == "reset":
+        if args[0] == "bdown":
+            attr = args[1]
+            gamepad.press_button(
+                button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
+            )
+            gamepad.update()
+        elif args[0] == "bup":
+            attr = args[1]
+            gamepad.release_button(
+                button=getattr(vgamepad.XUSB_BUTTON, f"XUSB_GAMEPAD_{attr}")
+            )
+            gamepad.update()
+        elif args[0] == "lstick":
+            x = float(args[1])
+            y = float(args[2])
+            gamepad.left_joystick_float(x, y)
+            gamepad.update()
+        elif args[0] == "rstick":
+            x = float(args[1])
+            y = float(args[2])
+            gamepad.right_joystick_float(x, y)
+            gamepad.update()
+        elif args[0] == "ltrig":
+            x = float(args[1])
+            gamepad.left_trigger_float(x)
+            gamepad.update()
+        elif args[0] == "rtrig":
+            x = float(args[1])
+            gamepad.right_trigger_float(x)
+            gamepad.update()
+        elif args[0] == "reset":
             gamepad.reset()
-            T.clear()
-        elif args[1] == "L":
+            gamepad.update()
+        elif args[0] == "L":
             log.info(cmd[cmd.find("L ") + 2 :])
+        else:
+            raise ValueError("args[0]")
     except Exception:
         traceback.print_exc()
 
