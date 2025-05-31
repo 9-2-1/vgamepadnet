@@ -16,5 +16,5 @@ python-3.8.6-embed-win32
 main.cmd
 
 # Path prefix
-path_prefix.txt
+path_prefix*.txt
 
