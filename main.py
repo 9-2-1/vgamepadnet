@@ -65,6 +65,15 @@ async def static_script_js(request: web.Request) -> web.Response:
         )
 
 
+@routes.get(f"/{path_prefix}/nosleep.js")
+async def static_script_js(request: web.Request) -> web.Response:
+    with open("nosleep.js", "rb") as f:
+        content = f.read()
+        return web.Response(
+            body=content, charset="utf-8", content_type="text/javascript"
+        )
+
+
 @routes.get(f"/{path_prefix}/style.css")
 async def static_style_css(request: web.Request) -> web.Response:
     with open("style.css", "rb") as f:

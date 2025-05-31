@@ -601,11 +601,19 @@ window.addEventListener("contextmenu", (event) => {
 });
 command("reset");
 
+const nosleep = new NoSleep();
+
 function toggleFullScreen() {
   if (!document.fullscreenElement) {
     document.documentElement?.requestFullscreen();
-    screen?.orientation?.lock("landscape");
+    try {
+      screen?.orientation?.lock("landscape");
+    } catch (e) {
+      console.warn(e);
+    }
+    nosleep.enable();
   } else if (document.exitFullscreen) {
     document.exitFullscreen();
+    nosleep.disable();
   }
 }

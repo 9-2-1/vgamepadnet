@@ -550,13 +550,21 @@ window.addEventListener("contextmenu", function (event) {
     event.preventDefault();
 });
 command("reset");
+var nosleep = new NoSleep();
 function toggleFullScreen() {
     var _a, _b;
     if (!document.fullscreenElement) {
         (_a = document.documentElement) === null || _a === void 0 ? void 0 : _a.requestFullscreen();
-        (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
+        try {
+            (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
+        }
+        catch (e) {
+            console.warn(e);
+        }
+        nosleep.enable();
     }
     else if (document.exitFullscreen) {
         document.exitFullscreen();
+        nosleep.disable();
     }
 }
