@@ -105,7 +105,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                 OnInput = function () {
                     var val = button.value.trim();
                     macroSteps = val.split(/\s+/).filter(function (s) { return s && s !== " "; });
-                    macroStr = macroSteps.join(" ");
+                    macroStr = val;
                 };
             }
             break;
@@ -143,6 +143,10 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
     button.style.left = "".concat(left, "px");
     button.style.height = "".concat(height, "px");
     button.style.width = "".concat(width, "px");
+    button.style.fontSize = "".concat(height * 0.5, "px");
+    if (mode == "latency") {
+        button.style.fontSize = "".concat(height * 0.3, "px");
+    }
     if (button instanceof HTMLButtonElement) {
         var oldDown_1 = false;
         var TrackerRawPos_1 = function (down, x, y) {
@@ -309,15 +313,15 @@ var buttonTable = parseButtonTable([
     ["ST", "☰", "START", "button", 3],
     ["BA", "❐", "BACK", "button", 3],
     ["GU", "⭙", "GUIDE", "button", 3],
-    ["L.", "(L)", "lstick", "stick", 5],
-    ["R.", "(R)", "rstick", "stick", 5],
+    ["L.", "L", "lstick", "stick", 5],
+    ["R.", "R", "rstick", "stick", 5],
     ["LT", "LT", "ltrig", "trigger", 3],
     ["RT", "RT", "rtrig", "trigger", 3],
     ["[]", "⛶", "", "fullscreen", 3],
-    ["A~", "[A]", "A", "turbo", 3],
-    ["B~", "[B]", "B", "turbo", 3],
-    ["X~", "[X]", "X", "turbo", 3],
-    ["Y~", "[Y]", "Y", "turbo", 3],
+    ["A~", "A", "A", "turbo", 3],
+    ["B~", "B", "B", "turbo", 3],
+    ["X~", "X", "X", "turbo", 3],
+    ["Y~", "Y", "Y", "turbo", 3],
     ["IN", "", "", "macrobar", 3],
     ["MA", "▶", "", "macroplay", 3],
     ["MS", "⏲", "", "latency", 3],
@@ -364,7 +368,9 @@ function reload() {
                 buttonNamed[symbol] = createButton(attr.mode, attr.label, attr.name, symbol, buttonY - (attr.size * buttonA) / 2, buttonX - (attr.size * buttonA) / 2, attr.size * buttonA, attr.mode == "macrobar"
                     ? attr.size * 4 * buttonA
                     : attr.size * buttonA);
-                textToSymbol[attr.label] = symbol;
+                if (attr.mode == "button" || attr.mode == "trigger") {
+                    textToSymbol[attr.label] = symbol;
+                }
             }
         }
     }

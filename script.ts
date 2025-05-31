@@ -138,7 +138,7 @@ function createButton(
         OnInput = () => {
           const val = button.value.trim();
           macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
-          macroStr = macroSteps.join(" ");
+          macroStr = val;
         };
       }
       break;
@@ -176,6 +176,10 @@ function createButton(
   button.style.left = `${left}px`;
   button.style.height = `${height}px`;
   button.style.width = `${width}px`;
+  button.style.fontSize = `${height * 0.5}px`;
+  if (mode == "latency") {
+    button.style.fontSize = `${height * 0.3}px`;
+  }
   if (button instanceof HTMLButtonElement) {
     let oldDown = false;
     const TrackerRawPos = (down: boolean, x: number, y: number) => {
@@ -346,15 +350,15 @@ const buttonTable: ButtonTable = parseButtonTable([
   ["ST", "☰", "START", "button", 3],
   ["BA", "❐", "BACK", "button", 3],
   ["GU", "⭙", "GUIDE", "button", 3],
-  ["L.", "(L)", "lstick", "stick", 5],
-  ["R.", "(R)", "rstick", "stick", 5],
+  ["L.", "L", "lstick", "stick", 5],
+  ["R.", "R", "rstick", "stick", 5],
   ["LT", "LT", "ltrig", "trigger", 3],
   ["RT", "RT", "rtrig", "trigger", 3],
   ["[]", "⛶", "", "fullscreen", 3],
-  ["A~", "[A]", "A", "turbo", 3],
-  ["B~", "[B]", "B", "turbo", 3],
-  ["X~", "[X]", "X", "turbo", 3],
-  ["Y~", "[Y]", "Y", "turbo", 3],
+  ["A~", "A", "A", "turbo", 3],
+  ["B~", "B", "B", "turbo", 3],
+  ["X~", "X", "X", "turbo", 3],
+  ["Y~", "Y", "Y", "turbo", 3],
   ["IN", "", "", "macrobar", 3],
   ["MA", "▶", "", "macroplay", 3],
   ["MS", "⏲", "", "latency", 3],
@@ -421,7 +425,9 @@ function reload() {
             ? attr.size * 4 * buttonA
             : attr.size * buttonA,
         );
-        textToSymbol[attr.label] = symbol;
+        if (attr.mode == "button" || attr.mode == "trigger") {
+          textToSymbol[attr.label] = symbol;
+        }
       }
     }
   }
