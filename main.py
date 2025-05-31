@@ -10,7 +10,7 @@ from collections import defaultdict
 from typing import Dict, Union, Optional
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
+# logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
 vibrate: int = 0
 vibrate_peak: int = 0
@@ -172,6 +172,11 @@ def gamepad_command(cmd: str) -> None:
             gamepad.update()
         elif args[0] == "L":
             log.info(cmd[cmd.find("L ") + 2 :])
+        elif args[0] == "ping":
+            if globalws is not None:
+                asyncio.create_task(
+                    globalws.send_str("pong " + cmd[cmd.find("ping ") + 5 :])
+                )
         else:
             raise ValueError("args[0]")
     except Exception:

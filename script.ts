@@ -1,5 +1,4 @@
 let mainWebsocket: WebSocket | null = null;
-let mainWebsocketColor = "#808080";
 let vibratePower = 0;
 let peakVibratePower = 0;
 
@@ -8,6 +7,12 @@ let macroStr = "";
 let macroSteps: Array<string> = [];
 let macroIndex = 0;
 let macroTime: number | null = null;
+
+let latencyTestCallback: ((value: unknown) => void) | null = null;
+const latencyTestTimeout = 1000;
+const latencyTestWait = 1000;
+let latencyTestResults: Array<number> = [];
+const latencyTestResultMax = 5;
 
 type ButtonTableRaw = [string, string, string, ButtonMode, number];
 type ButtonAttr = {
@@ -37,7 +42,8 @@ type ButtonMode =
   | "fullscreen"
   | "turbo"
   | "macrobar"
-  | "macroplay";
+  | "macroplay"
+  | "latency";
 const turboButtons: {
   [symbol: string]: { enabled: boolean; timer: number | null };
 } = {
@@ -152,8 +158,12 @@ function createButton(
             }
             macroTime = null;
           }
-          updateButtonColor();
+          updateButtons();
         };
+      }
+      break;
+    case "latency":
+      {
       }
       break;
   }
@@ -297,7 +307,7 @@ const buttonmap = [
   "            LS                                              Y:                  ",
   "                                                                                ",
   "  LB            L.                                      X:      B:          RB  ",
-  "                              BA              ST                                ",
+  "                              BA      MS      ST                                ",
   "                                                            A:                  ",
   "                                                                                ",
   "                    DU                                RS                        ",
@@ -347,6 +357,7 @@ const buttonTable: ButtonTable = parseButtonTable([
   ["Y~", "[Y]", "Y", "turbo", 3],
   ["IN", "", "", "macrobar", 3],
   ["MA", "▶", "", "macroplay", 3],
+  ["MS", "⏲", "", "latency", 3],
 ]);
 let buttonNamed: Record<string, HTMLElement> = {};
 
@@ -422,31 +433,25 @@ function reload() {
   textToSymbol["v"] = "DD";
   textToSymbol["<"] = "DL";
   textToSymbol[">"] = "DR";
-  updateButtonColor();
+  updateButtons();
 }
 
 function wsConnect() {
   const cwd = window.location.host + window.location.pathname;
   const nextWebsocket = new WebSocket(`ws://${cwd}websocket`);
-  mainWebsocketColor = "#F0F080";
-  updateButtonColor();
   nextWebsocket.addEventListener("open", (event) => {
-    mainWebsocket = null;
     mainWebsocket = nextWebsocket;
-    mainWebsocketColor = "#80FF80";
-    updateButtonColor();
+    updateButtons();
   });
   nextWebsocket.addEventListener("error", (event) => {
     console.error(event);
     mainWebsocket = null;
-    mainWebsocketColor = "#FF8080";
-    updateButtonColor();
+    updateButtons();
   });
   nextWebsocket.addEventListener("close", (event) => {
     console.error("mainWebsocket closed");
     mainWebsocket = null;
-    mainWebsocketColor = "#FF8080";
-    updateButtonColor();
+    updateButtons();
     setTimeout(wsConnect, 5000);
   });
   nextWebsocket.addEventListener("message", (event) => {
@@ -457,6 +462,10 @@ function wsConnect() {
         vibratePower = Number(args[1]);
         if (vibratePower > peakVibratePower) {
           peakVibratePower = vibratePower;
+        }
+      } else if (args[0] == "pong") {
+        if (latencyTestCallback !== null) {
+          latencyTestCallback(null);
         }
       } else {
         console.warn(`Unknown command ${msg}`);
@@ -475,7 +484,7 @@ function toggleButtonRepeat(symbol: string) {
   if (buttonState.enabled) {
     turboButtonDown(symbol);
   }
-  updateButtonColor();
+  updateButtons();
 }
 
 function buttonDown(symbol: string) {
@@ -489,7 +498,7 @@ function buttonDown(symbol: string) {
       console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = true;
-    updateButtonColor();
+    updateButtons();
   } else {
     console.warn(`Unknown button ${symbol}`);
   }
@@ -505,7 +514,7 @@ function buttonUp(symbol: string) {
       console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = false;
-    updateButtonColor();
+    updateButtons();
   } else {
     console.warn(`Unknown button ${symbol}`);
   }
@@ -545,8 +554,69 @@ function macroLoop() {
   }
 }
 
-function updateButtonColor() {
-  buttonNamed["GU"].style.backgroundColor = mainWebsocketColor;
+function checkLatency() {
+  if (mainWebsocket === null) {
+    latencyTestResults = [];
+    updateButtons();
+    setTimeout(checkLatency, latencyTestWait);
+    return;
+  }
+  mainWebsocket.send("ping");
+  const latencyTestStart = new Date().getTime();
+  new Promise((resolve, reject) => {
+    latencyTestCallback = resolve;
+    setTimeout(reject, latencyTestTimeout);
+  })
+    .then(() => {
+      latencyTestCallback = null;
+      const latencyTestStop = new Date().getTime();
+      latencyTestResults.push(latencyTestStop - latencyTestStart);
+      if (latencyTestResults.length > latencyTestResultMax) {
+        latencyTestResults.shift();
+      }
+      updateButtons();
+      setTimeout(checkLatency, latencyTestWait);
+    })
+    .catch(() => {
+      latencyTestCallback = null;
+      latencyTestResults = [];
+      updateButtons();
+      setTimeout(checkLatency, latencyTestWait);
+    });
+}
+
+function updateButtons() {
+  const bMS = buttonNamed["MS"];
+  if (bMS instanceof HTMLButtonElement) {
+    bMS.classList.remove("button-good");
+    bMS.classList.remove("button-normal");
+    bMS.classList.remove("button-bad");
+    bMS.classList.remove("button-uncertain");
+    bMS.classList.remove("button-disconnected");
+    if (mainWebsocket === null) {
+      bMS.textContent = "!";
+      bMS.classList.add("button-disconnected");
+    } else {
+      if (latencyTestResults.length == 0) {
+        bMS.textContent = "?";
+        bMS.classList.add("button-uncertain");
+      } else {
+        let sum = 0;
+        for (let v of latencyTestResults) {
+          sum += v;
+        }
+        sum = Math.floor(sum / latencyTestResults.length);
+        bMS.textContent = `${sum}ms`;
+        if (sum < 25) {
+          bMS.classList.add("button-good");
+        } else if (sum < 100) {
+          bMS.classList.add("button-normal");
+        } else {
+          bMS.classList.add("button-bad");
+        }
+      }
+    }
+  }
   Object.keys(buttonNamed).forEach((sym) => {
     const button = buttonNamed[sym];
     if (sym[1] == "~") {
@@ -581,6 +651,7 @@ window.addEventListener("load", () => {
   reload();
   vibration();
   wsConnect();
+  checkLatency();
 });
 window.addEventListener("resize", reload);
 window.addEventListener("contextmenu", (event) => {

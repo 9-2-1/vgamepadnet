@@ -1,5 +1,4 @@
 var mainWebsocket = null;
-var mainWebsocketColor = "#808080";
 var vibratePower = 0;
 var peakVibratePower = 0;
 var macroDown = false;
@@ -7,6 +6,11 @@ var macroStr = "";
 var macroSteps = [];
 var macroIndex = 0;
 var macroTime = null;
+var latencyTestCallback = null;
+var latencyTestTimeout = 1000;
+var latencyTestWait = 1000;
+var latencyTestResults = [];
+var latencyTestResultMax = 5;
 var buttonPressed = {};
 var textToSymbol = {};
 function log(x) {
@@ -121,8 +125,12 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                         }
                         macroTime = null;
                     }
-                    updateButtonColor();
+                    updateButtons();
                 };
+            }
+            break;
+        case "latency":
+            {
             }
             break;
     }
@@ -260,7 +268,7 @@ var buttonmap = [
     "            LS                                              Y:                  ",
     "                                                                                ",
     "  LB            L.                                      X:      B:          RB  ",
-    "                              BA              ST                                ",
+    "                              BA      MS      ST                                ",
     "                                                            A:                  ",
     "                                                                                ",
     "                    DU                                RS                        ",
@@ -311,6 +319,7 @@ var buttonTable = parseButtonTable([
     ["Y~", "[Y]", "Y", "turbo", 3],
     ["IN", "", "", "macrobar", 3],
     ["MA", "▶", "", "macroplay", 3],
+    ["MS", "⏲", "", "latency", 3],
 ]);
 var buttonNamed = {};
 function reload() {
@@ -366,30 +375,24 @@ function reload() {
     textToSymbol["v"] = "DD";
     textToSymbol["<"] = "DL";
     textToSymbol[">"] = "DR";
-    updateButtonColor();
+    updateButtons();
 }
 function wsConnect() {
     var cwd = window.location.host + window.location.pathname;
     var nextWebsocket = new WebSocket("ws://".concat(cwd, "websocket"));
-    mainWebsocketColor = "#F0F080";
-    updateButtonColor();
     nextWebsocket.addEventListener("open", function (event) {
-        mainWebsocket = null;
         mainWebsocket = nextWebsocket;
-        mainWebsocketColor = "#80FF80";
-        updateButtonColor();
+        updateButtons();
     });
     nextWebsocket.addEventListener("error", function (event) {
         console.error(event);
         mainWebsocket = null;
-        mainWebsocketColor = "#FF8080";
-        updateButtonColor();
+        updateButtons();
     });
     nextWebsocket.addEventListener("close", function (event) {
         console.error("mainWebsocket closed");
         mainWebsocket = null;
-        mainWebsocketColor = "#FF8080";
-        updateButtonColor();
+        updateButtons();
         setTimeout(wsConnect, 5000);
     });
     nextWebsocket.addEventListener("message", function (event) {
@@ -400,6 +403,11 @@ function wsConnect() {
                 vibratePower = Number(args[1]);
                 if (vibratePower > peakVibratePower) {
                     peakVibratePower = vibratePower;
+                }
+            }
+            else if (args[0] == "pong") {
+                if (latencyTestCallback !== null) {
+                    latencyTestCallback(null);
                 }
             }
             else {
@@ -419,7 +427,7 @@ function toggleButtonRepeat(symbol) {
     if (buttonState.enabled) {
         turboButtonDown(symbol);
     }
-    updateButtonColor();
+    updateButtons();
 }
 function buttonDown(symbol) {
     var attr = buttonTable[symbol];
@@ -434,7 +442,7 @@ function buttonDown(symbol) {
             console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = true;
-        updateButtonColor();
+        updateButtons();
     }
     else {
         console.warn("Unknown button ".concat(symbol));
@@ -453,7 +461,7 @@ function buttonUp(symbol) {
             console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = false;
-        updateButtonColor();
+        updateButtons();
     }
     else {
         console.warn("Unknown button ".concat(symbol));
@@ -492,8 +500,73 @@ function macroLoop() {
         macroDown = true;
     }
 }
-function updateButtonColor() {
-    buttonNamed["GU"].style.backgroundColor = mainWebsocketColor;
+function checkLatency() {
+    if (mainWebsocket === null) {
+        latencyTestResults = [];
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+        return;
+    }
+    mainWebsocket.send("ping");
+    var latencyTestStart = new Date().getTime();
+    new Promise(function (resolve, reject) {
+        latencyTestCallback = resolve;
+        setTimeout(reject, latencyTestTimeout);
+    })
+        .then(function () {
+        latencyTestCallback = null;
+        var latencyTestStop = new Date().getTime();
+        latencyTestResults.push(latencyTestStop - latencyTestStart);
+        if (latencyTestResults.length > latencyTestResultMax) {
+            latencyTestResults.shift();
+        }
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+    })
+        .catch(function () {
+        latencyTestCallback = null;
+        latencyTestResults = [];
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+    });
+}
+function updateButtons() {
+    var bMS = buttonNamed["MS"];
+    if (bMS instanceof HTMLButtonElement) {
+        bMS.classList.remove("button-good");
+        bMS.classList.remove("button-normal");
+        bMS.classList.remove("button-bad");
+        bMS.classList.remove("button-uncertain");
+        bMS.classList.remove("button-disconnected");
+        if (mainWebsocket === null) {
+            bMS.textContent = "!";
+            bMS.classList.add("button-disconnected");
+        }
+        else {
+            if (latencyTestResults.length == 0) {
+                bMS.textContent = "?";
+                bMS.classList.add("button-uncertain");
+            }
+            else {
+                var sum = 0;
+                for (var _i = 0, latencyTestResults_1 = latencyTestResults; _i < latencyTestResults_1.length; _i++) {
+                    var v = latencyTestResults_1[_i];
+                    sum += v;
+                }
+                sum = Math.floor(sum / latencyTestResults.length);
+                bMS.textContent = "".concat(sum, "ms");
+                if (sum < 25) {
+                    bMS.classList.add("button-good");
+                }
+                else if (sum < 100) {
+                    bMS.classList.add("button-normal");
+                }
+                else {
+                    bMS.classList.add("button-bad");
+                }
+            }
+        }
+    }
     Object.keys(buttonNamed).forEach(function (sym) {
         var button = buttonNamed[sym];
         if (sym[1] == "~") {
@@ -531,6 +604,7 @@ window.addEventListener("load", function () {
     reload();
     vibration();
     wsConnect();
+    checkLatency();
 });
 window.addEventListener("resize", reload);
 window.addEventListener("contextmenu", function (event) {

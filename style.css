@@ -34,7 +34,7 @@ body {
   color: black;
   align-content: center;
   text-align: center;
-  border-radius: 0%;
+  border-radius: 5px;
 }
 
 .button-down {
@@ -42,17 +42,36 @@ body {
 }
 
 .button-locked {
-  background-color: #80c0ff;
+  background-color: #90e0ff;
 }
 
 .button-locked.button-down {
-  background-color: #80c080;
+  background-color: #80e080;
 }
 
 .button-pressed {
-  background-color: #f0a0f0;
+  background-color: #ffc0ff;
 }
 
 .button-pressed.button-down {
   background-color: #80ff80;
+}
+
+.button-latency {
+  border-radius: 5px;
+}
+.button-good {
+  background-color: #80c6ff;
+}
+.button-normal {
+  background-color: #80ff80;
+}
+.button-bad {
+  background-color: #f0f080;
+}
+.button-uncertain {
+  background-color: #ffa0ff;
+}
+.button-disconnected {
+  background-color: #ffa0a0;
 }
