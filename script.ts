@@ -275,30 +275,37 @@ function vibration() {
       return;
     }
   }
-  if (peakVibratePower == 0) {
-    a.push(0);
+  const minunit = 5;
+  const tot = 100;
+  let totOn = 0;
+  let totOff = 0;
+  const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.7;
+  if (fixedPower >= 1) {
+    a.push(tot);
+  } else if (fixedPower <= 0) {
+    // pass
   } else {
-    const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.6;
-    let d = 0;
-    for (let i = 0; i < 50; i++) {
-      d += 10 * fixedPower;
-      let p = Math.floor(d);
-      d -= p;
-      if (p > 10) {
-        p = 10;
-      }
-      a.push(p);
-      a.push(10 - p);
-    } // 50*10=500ms
-    for (let i = 1; i < a.length - 1; i++) {
-      if (a[i] == 0) {
-        a[i - 1] += a[i + 1];
-        a.splice(i, 2);
-        i--;
+    while (totOn + totOff < tot) {
+      if (fixedPower > 0.5) {
+        totOff += minunit;
+        const on = Math.floor(
+          (totOff * fixedPower) / (1 - fixedPower) - totOn + 0.5,
+        );
+        a.push(on);
+        a.push(minunit);
+        totOn += on;
+      } else {
+        totOn += minunit;
+        const off = Math.floor(
+          (totOn * (1 - fixedPower)) / fixedPower - totOff + 0.5,
+        );
+        a.push(minunit);
+        a.push(off);
+        totOff += off;
       }
     }
   }
-  // log(`peak: ${peakVibratePower}`);
+  // log(`peak: ${peakVibratePower} a: ${a}`);
   navigator?.vibrate(a);
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
