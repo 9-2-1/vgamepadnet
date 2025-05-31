@@ -1,9 +1,4 @@
-let commandId = 1;
-let commandList: Array<string> = [];
-let commandScheduled = false;
-
 let mainWebsocket: WebSocket | null = null;
-let mainWebsocketColor = "#808080";
 let vibratePower = 0;
 let peakVibratePower = 0;
 
@@ -13,30 +8,33 @@ let macroSteps: Array<string> = [];
 let macroIndex = 0;
 let macroTime: number | null = null;
 
+let latencyTestCallback: ((value: unknown) => void) | null = null;
+const latencyTestTimeout = 1000;
+const latencyTestWait = 1000;
+let latencyTestResults: Array<number> = [];
+const latencyTestResultMax = 5;
+
+type ButtonTableRaw = [string, string, string, ButtonMode, number];
+type ButtonAttr = {
+  label: string;
+  name: string;
+  mode: ButtonMode;
+  size: number;
+};
+type ButtonTable = Record<string, ButtonAttr>;
 let buttonPressed: Record<string, boolean> = {};
 let dpadPressed: number = 8;
 let dpadStr = "↑↗→↘↓↙←↖☩".split("");
 let dpadAltStr = "W WD D SD S SA A WA".split(" ");
-let textToButtonTable: Record<
-  string,
-  [string, string, string, ButtonMode, number]
-> = {};
+let textToSymbol: Record<string, string> = {};
 
 function log(x: any): void {
   command(`L ${JSON.stringify(x)}`);
 }
 
 function command(x: string): void {
-  commandList.push(`${commandId++} ${x}`);
-  if (!commandScheduled) {
-    commandScheduled = true;
-    setTimeout(() => {
-      if (mainWebsocket !== null) {
-        mainWebsocket.send(commandList.join("\n"));
-        commandList = [];
-      }
-      commandScheduled = false;
-    }, 16);
+  if (mainWebsocket !== null) {
+    mainWebsocket.send(x);
   }
 }
 
@@ -47,8 +45,9 @@ type ButtonMode =
   | "trigger"
   | "fullscreen"
   | "turbo"
-  | "input"
-  | "macro";
+  | "macrobar"
+  | "macroplay"
+  | "latency";
 const turboButtons: {
   [symbol: string]: { enabled: boolean; timer: number | null };
 } = {
@@ -164,7 +163,7 @@ function createButton(
         };
       }
       break;
-    case "input":
+    case "macrobar":
       {
         tagname = "input";
         OnInput = () => {
@@ -174,7 +173,7 @@ function createButton(
         };
       }
       break;
-    case "macro":
+    case "macroplay":
       {
         TrackerDown = () => {
           if (macroTime === null) {
@@ -186,12 +185,16 @@ function createButton(
           } else {
             clearInterval(macroTime);
             if (macroDown) {
-              buttonUp(macroSteps[macroIndex]);
+              macroLoop();
             }
             macroTime = null;
           }
-          updateButtonColor();
+          updateButtons();
         };
+      }
+      break;
+    case "latency":
+      {
       }
       break;
   }
@@ -323,9 +326,7 @@ function vibration() {
     }
   }
   // log(`peak: ${peakVibratePower}`);
-  if (navigator.vibrate) {
-    navigator.vibrate(a);
-  }
+  navigator?.vibrate(a);
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
 }
@@ -337,7 +338,7 @@ const buttonmap = [
   "            LS                                              4:                  ",
   "                                                                                ",
   "  LB            L.                                      3:      1:          RB  ",
-  "                              SH              OP                                ",
+  "                              SH      MS      OP                                ",
   "                                                            2:                  ",
   "                                                                                ",
   "                                                      RS                        ",
@@ -351,7 +352,15 @@ const buttonmap = [
   "                          IN                      MA                        []  ",
   "                                                                                ",
 ];
-const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
+function parseButtonTable(table: Array<ButtonTableRaw>): ButtonTable {
+  const ret: ButtonTable = {};
+  for (const line of table) {
+    const [symbol, label, name, mode, size] = line;
+    ret[symbol] = { label, name, mode, size };
+  }
+  return ret;
+}
+const buttonTable: ButtonTable = parseButtonTable([
   // [Symbol, Label, Name, Type, Size]
   ["1:", "○", "normal CIRCLE", "button", 3],
   ["2:", "✕", "normal CROSS", "button", 3],
@@ -375,9 +384,10 @@ const buttonTable: Array<[string, string, string, ButtonMode, number]> = [
   ["2~", "[✕]", "normal CROSS", "turbo", 3],
   ["3~", "[□]", "normal SQUARE", "turbo", 3],
   ["4~", "[△]", "normal TRIANGLE", "turbo", 3],
-  ["IN", "", "", "input", 3],
-  ["MA", "▶", "", "macro", 3],
-];
+  ["IN", "", "", "macrobar", 3],
+  ["MA", "▶", "", "macroplay", 3],
+  ["MS", "⏲", "", "latency", 3],
+]);
 
 let buttonNamed: Record<string, HTMLElement> = {};
 
@@ -421,58 +431,57 @@ function reload() {
   // buttons
   for (let i = 0; i < buttonmap.length; i++) {
     for (let j = 0; j < buttonmap[i].length / 2; j++) {
-      const symb = buttonmap[i].slice(j * 2, j * 2 + 2);
-      if (symb == "  ") {
+      const symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
+      if (symbol == "  ") {
         continue;
       }
       const buttonX = buttonXoffset + j * buttonA + buttonA / 2;
       const buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-      for (let k = 0; k < buttonTable.length; k++) {
-        const [symbol, label, name, mode, size] = buttonTable[k];
-        if (symbol == symb) {
-          buttonNamed[symbol] = createButton(
-            mode,
-            label,
-            name,
-            symbol,
-            buttonY - (size * buttonA) / 2,
-            buttonX - (size * buttonA) / 2,
-            size * buttonA,
-            mode == "input" ? size * 4 * buttonA : size * buttonA,
-          );
-          if (mode == "button" || mode == "trigger") {
-            textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
-            textToButtonTable[label.toUpperCase()] = buttonTable[k];
-          }
-        }
+      const attr = buttonTable[symbol];
+      if (attr) {
+        buttonNamed[symbol] = createButton(
+          attr.mode,
+          attr.label,
+          attr.name,
+          symbol,
+          buttonY - (attr.size * buttonA) / 2,
+          buttonX - (attr.size * buttonA) / 2,
+          attr.size * buttonA,
+          attr.mode == "macrobar"
+            ? attr.size * 4 * buttonA
+            : attr.size * buttonA,
+        );
+        textToSymbol[attr.label] = symbol;
       }
     }
   }
-  updateButtonColor();
+  textToSymbol["UP"] = "DU";
+  textToSymbol["DOWN"] = "DD";
+  textToSymbol["LEFT"] = "DL";
+  textToSymbol["RIGHT"] = "DR";
+  textToSymbol["^"] = "DU";
+  textToSymbol["v"] = "DD";
+  textToSymbol["<"] = "DL";
+  textToSymbol[">"] = "DR";
+  updateButtons();
 }
 
 function wsConnect() {
   const cwd = window.location.host + window.location.pathname;
   const nextWebsocket = new WebSocket(`ws://${cwd}websocket`);
-  mainWebsocketColor = "#F0F080";
-  updateButtonColor();
   nextWebsocket.addEventListener("open", (event) => {
-    mainWebsocket = null;
     mainWebsocket = nextWebsocket;
-    mainWebsocketColor = "#80FF80";
-    updateButtonColor();
+    updateButtons();
   });
   nextWebsocket.addEventListener("error", (event) => {
     console.error(event);
     mainWebsocket = null;
-    mainWebsocketColor = "#FF8080";
-    updateButtonColor();
+    updateButtons();
   });
   nextWebsocket.addEventListener("close", (event) => {
     console.error("mainWebsocket closed");
     mainWebsocket = null;
-    mainWebsocketColor = "#FF8080";
-    updateButtonColor();
+    updateButtons();
     setTimeout(wsConnect, 5000);
   });
   nextWebsocket.addEventListener("message", (event) => {
@@ -483,6 +492,10 @@ function wsConnect() {
         vibratePower = Number(args[1]);
         if (vibratePower > peakVibratePower) {
           peakVibratePower = vibratePower;
+        }
+      } else if (args[0] == "pong") {
+        if (latencyTestCallback !== null) {
+          latencyTestCallback(null);
         }
       } else {
         console.warn(`Unknown command ${msg}`);
@@ -501,7 +514,7 @@ function toggleButtonRepeat(symbol: string) {
   if (buttonState.enabled) {
     turboButtonDown(symbol);
   }
-  updateButtonColor();
+  updateButtons();
 }
 function textToDirection(text: string) {
   const dpadDirection = dpadStr.indexOf(text);
@@ -510,60 +523,54 @@ function textToDirection(text: string) {
   }
   return dpadAltStr.indexOf(text.toUpperCase());
 }
-function buttonDown(text: string) {
+function buttonDown(symbol: string) {
   // dpad
-  const dpadDirection = textToDirection(text);
+  const dpadDirection = textToDirection(symbol);
   if (dpadDirection !== -1) {
     dpadChange(dpadDirection);
     return;
   }
-  const button = textToButtonTable[text.toUpperCase()];
-  if (button) {
-    const symbol = button[0];
-    const name = button[2];
-    const mode = button[3];
-    if (mode == "button") {
-      command(`bdown ${name}`);
-    } else if (mode == "trigger") {
-      command(`${name} 1`);
+  const attr = buttonTable[symbol];
+  if (attr) {
+    if (attr.mode == "button") {
+      command(`bdown ${attr.name}`);
+    } else if (attr.mode == "trigger") {
+      command(`${attr.name} 1`);
     } else {
-      console.warn(`Unable to down button ${text}`);
+      console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = true;
-    updateButtonColor();
+    updateButtons();
   } else {
-    console.warn(`Unknown button ${text}`);
+    console.warn(`Unknown button ${symbol}`);
   }
 }
-function buttonUp(text: string) {
-  const dpadDirection = textToDirection(text);
+function buttonUp(symbol: string) {
+  const dpadDirection = textToDirection(symbol);
   if (dpadDirection !== -1) {
     dpadChange(8);
     return;
   }
-  const button = textToButtonTable[text.toUpperCase()];
-  if (button) {
-    const symbol = button[0];
-    const name = button[2];
-    const mode = button[3];
-    if (mode == "button") {
-      command(`bup ${name}`);
-    } else if (mode == "trigger") {
-      command(`${name} 0`);
+  const attr = buttonTable[symbol];
+  if (attr) {
+    if (attr.mode == "button") {
+      command(`bup ${attr.name}`);
+    } else if (attr.mode == "trigger") {
+      command(`${attr.name} 0`);
     } else {
-      console.warn(`Unable to up button ${text}`);
+      console.warn(`Unable to down button ${symbol}`);
     }
     buttonPressed[symbol] = false;
-    updateButtonColor();
+    updateButtons();
   } else {
-    console.warn(`Unknown button ${text}`);
+    console.warn(`Unknown button ${symbol}`);
   }
 }
 function dpadChange(direction: number) {
   if (dpadPressed !== direction) {
     command(`dpad ${direction}`);
     dpadPressed = direction;
-    updateButtonColor();
+    updateButtons();
   }
 }
 function turboButtonDown(symbol: string) {
@@ -582,7 +589,11 @@ function macroLoop() {
   if (macroIndex >= macroSteps.length) {
     macroIndex = 0;
   }
-  const step = macroSteps[macroIndex];
+  let step = macroSteps[macroIndex];
+  step = step.toUpperCase();
+  if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
+    step = textToSymbol[step];
+  }
   if (macroDown) {
     if (step !== ".") {
       buttonUp(step);
@@ -597,8 +608,69 @@ function macroLoop() {
   }
 }
 
-function updateButtonColor() {
-  buttonNamed["PS"].style.backgroundColor = mainWebsocketColor;
+function checkLatency() {
+  if (mainWebsocket === null) {
+    latencyTestResults = [];
+    updateButtons();
+    setTimeout(checkLatency, latencyTestWait);
+    return;
+  }
+  mainWebsocket.send("ping");
+  const latencyTestStart = new Date().getTime();
+  new Promise((resolve, reject) => {
+    latencyTestCallback = resolve;
+    setTimeout(reject, latencyTestTimeout);
+  })
+    .then(() => {
+      latencyTestCallback = null;
+      const latencyTestStop = new Date().getTime();
+      latencyTestResults.push(latencyTestStop - latencyTestStart);
+      if (latencyTestResults.length > latencyTestResultMax) {
+        latencyTestResults.shift();
+      }
+      updateButtons();
+      setTimeout(checkLatency, latencyTestWait);
+    })
+    .catch(() => {
+      latencyTestCallback = null;
+      latencyTestResults = [];
+      updateButtons();
+      setTimeout(checkLatency, latencyTestWait);
+    });
+}
+
+function updateButtons() {
+  const bMS = buttonNamed["MS"];
+  if (bMS instanceof HTMLButtonElement) {
+    bMS.classList.remove("button-good");
+    bMS.classList.remove("button-normal");
+    bMS.classList.remove("button-bad");
+    bMS.classList.remove("button-uncertain");
+    bMS.classList.remove("button-disconnected");
+    if (mainWebsocket === null) {
+      bMS.textContent = "!";
+      bMS.classList.add("button-disconnected");
+    } else {
+      if (latencyTestResults.length == 0) {
+        bMS.textContent = "?";
+        bMS.classList.add("button-uncertain");
+      } else {
+        let sum = 0;
+        for (let v of latencyTestResults) {
+          sum += v;
+        }
+        sum = Math.floor(sum / latencyTestResults.length);
+        bMS.textContent = `${sum}ms`;
+        if (sum < 25) {
+          bMS.classList.add("button-good");
+        } else if (sum < 100) {
+          bMS.classList.add("button-normal");
+        } else {
+          bMS.classList.add("button-bad");
+        }
+      }
+    }
+  }
   Object.keys(buttonNamed).forEach((sym) => {
     const button = buttonNamed[sym];
     if (sym[1] == "~") {
@@ -644,6 +716,7 @@ window.addEventListener("load", () => {
   reload();
   vibration();
   wsConnect();
+  checkLatency();
 });
 window.addEventListener("resize", reload);
 window.addEventListener("contextmenu", (event) => {
@@ -652,10 +725,19 @@ window.addEventListener("contextmenu", (event) => {
 });
 command("reset");
 
+const nosleep = new NoSleep();
+
 function toggleFullScreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
+    document.documentElement?.requestFullscreen();
+    try {
+      screen?.orientation?.lock("landscape");
+    } catch (e) {
+      console.warn(e);
+    }
+    nosleep.enable();
   } else if (document.exitFullscreen) {
     document.exitFullscreen();
+    nosleep.disable();
   }
 }

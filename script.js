@@ -1,8 +1,5 @@
-var commandId = 1;
-var commandList = [];
-var commandScheduled = false;
+"use strict";
 var mainWebsocket = null;
-var mainWebsocketColor = "#808080";
 var vibratePower = 0;
 var peakVibratePower = 0;
 var macroDown = false;
@@ -10,25 +7,22 @@ var macroStr = "";
 var macroSteps = [];
 var macroIndex = 0;
 var macroTime = null;
+var latencyTestCallback = null;
+var latencyTestTimeout = 1000;
+var latencyTestWait = 1000;
+var latencyTestResults = [];
+var latencyTestResultMax = 5;
 var buttonPressed = {};
 var dpadPressed = 8;
 var dpadStr = "↑↗→↘↓↙←↖☩".split("");
 var dpadAltStr = "W WD D SD S SA A WA".split(" ");
-var textToButtonTable = {};
+var textToSymbol = {};
 function log(x) {
     command("L ".concat(JSON.stringify(x)));
 }
 function command(x) {
-    commandList.push("".concat(commandId++, " ").concat(x));
-    if (!commandScheduled) {
-        commandScheduled = true;
-        setTimeout(function () {
-            if (mainWebsocket !== null) {
-                mainWebsocket.send(commandList.join("\n"));
-                commandList = [];
-            }
-            commandScheduled = false;
-        }, 16);
+    if (mainWebsocket !== null) {
+        mainWebsocket.send(x);
     }
 }
 var turboButtons = {
@@ -138,7 +132,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                 };
             }
             break;
-        case "input":
+        case "macrobar":
             {
                 tagname = "input";
                 OnInput = function () {
@@ -148,7 +142,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                 };
             }
             break;
-        case "macro":
+        case "macroplay":
             {
                 TrackerDown = function () {
                     if (macroTime === null) {
@@ -161,12 +155,16 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                     else {
                         clearInterval(macroTime);
                         if (macroDown) {
-                            buttonUp(macroSteps[macroIndex]);
+                            macroLoop();
                         }
                         macroTime = null;
                     }
-                    updateButtonColor();
+                    updateButtons();
                 };
+            }
+            break;
+        case "latency":
+            {
             }
             break;
     }
@@ -293,9 +291,7 @@ function vibration() {
         }
     }
     // log(`peak: ${peakVibratePower}`);
-    if (navigator.vibrate) {
-        navigator.vibrate(a);
-    }
+    navigator === null || navigator === void 0 ? void 0 : navigator.vibrate(a);
     oldViberatePower = peakVibratePower;
     oldViberateCount = 0;
 }
@@ -306,7 +302,7 @@ var buttonmap = [
     "            LS                                              4:                  ",
     "                                                                                ",
     "  LB            L.                                      3:      1:          RB  ",
-    "                              SH              OP                                ",
+    "                              SH      MS      OP                                ",
     "                                                            2:                  ",
     "                                                                                ",
     "                                                      RS                        ",
@@ -320,7 +316,16 @@ var buttonmap = [
     "                          IN                      MA                        []  ",
     "                                                                                ",
 ];
-var buttonTable = [
+function parseButtonTable(table) {
+    var ret = {};
+    for (var _i = 0, table_1 = table; _i < table_1.length; _i++) {
+        var line = table_1[_i];
+        var symbol = line[0], label = line[1], name_1 = line[2], mode = line[3], size = line[4];
+        ret[symbol] = { label: label, name: name_1, mode: mode, size: size };
+    }
+    return ret;
+}
+var buttonTable = parseButtonTable([
     // [Symbol, Label, Name, Type, Size]
     ["1:", "○", "normal CIRCLE", "button", 3],
     ["2:", "✕", "normal CROSS", "button", 3],
@@ -344,9 +349,10 @@ var buttonTable = [
     ["2~", "[✕]", "normal CROSS", "turbo", 3],
     ["3~", "[□]", "normal SQUARE", "turbo", 3],
     ["4~", "[△]", "normal TRIANGLE", "turbo", 3],
-    ["IN", "", "", "input", 3],
-    ["MA", "▶", "", "macro", 3],
-];
+    ["IN", "", "", "macrobar", 3],
+    ["MA", "▶", "", "macroplay", 3],
+    ["MS", "⏲", "", "latency", 3],
+]);
 var buttonNamed = {};
 function reload() {
     if (document.activeElement instanceof HTMLInputElement) {
@@ -378,48 +384,47 @@ function reload() {
     // buttons
     for (var i = 0; i < buttonmap.length; i++) {
         for (var j = 0; j < buttonmap[i].length / 2; j++) {
-            var symb = buttonmap[i].slice(j * 2, j * 2 + 2);
-            if (symb == "  ") {
+            var symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
+            if (symbol == "  ") {
                 continue;
             }
             var buttonX = buttonXoffset + j * buttonA + buttonA / 2;
             var buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-            for (var k = 0; k < buttonTable.length; k++) {
-                var _a = buttonTable[k], symbol = _a[0], label = _a[1], name_1 = _a[2], mode = _a[3], size = _a[4];
-                if (symbol == symb) {
-                    buttonNamed[symbol] = createButton(mode, label, name_1, symbol, buttonY - (size * buttonA) / 2, buttonX - (size * buttonA) / 2, size * buttonA, mode == "input" ? size * 4 * buttonA : size * buttonA);
-                    if (mode == "button" || mode == "trigger") {
-                        textToButtonTable[symbol.toUpperCase()] = buttonTable[k];
-                        textToButtonTable[label.toUpperCase()] = buttonTable[k];
-                    }
-                }
+            var attr = buttonTable[symbol];
+            if (attr) {
+                buttonNamed[symbol] = createButton(attr.mode, attr.label, attr.name, symbol, buttonY - (attr.size * buttonA) / 2, buttonX - (attr.size * buttonA) / 2, attr.size * buttonA, attr.mode == "macrobar"
+                    ? attr.size * 4 * buttonA
+                    : attr.size * buttonA);
+                textToSymbol[attr.label] = symbol;
             }
         }
     }
-    updateButtonColor();
+    textToSymbol["UP"] = "DU";
+    textToSymbol["DOWN"] = "DD";
+    textToSymbol["LEFT"] = "DL";
+    textToSymbol["RIGHT"] = "DR";
+    textToSymbol["^"] = "DU";
+    textToSymbol["v"] = "DD";
+    textToSymbol["<"] = "DL";
+    textToSymbol[">"] = "DR";
+    updateButtons();
 }
 function wsConnect() {
     var cwd = window.location.host + window.location.pathname;
     var nextWebsocket = new WebSocket("ws://".concat(cwd, "websocket"));
-    mainWebsocketColor = "#F0F080";
-    updateButtonColor();
     nextWebsocket.addEventListener("open", function (event) {
-        mainWebsocket = null;
         mainWebsocket = nextWebsocket;
-        mainWebsocketColor = "#80FF80";
-        updateButtonColor();
+        updateButtons();
     });
     nextWebsocket.addEventListener("error", function (event) {
         console.error(event);
         mainWebsocket = null;
-        mainWebsocketColor = "#FF8080";
-        updateButtonColor();
+        updateButtons();
     });
     nextWebsocket.addEventListener("close", function (event) {
         console.error("mainWebsocket closed");
         mainWebsocket = null;
-        mainWebsocketColor = "#FF8080";
-        updateButtonColor();
+        updateButtons();
         setTimeout(wsConnect, 5000);
     });
     nextWebsocket.addEventListener("message", function (event) {
@@ -430,6 +435,11 @@ function wsConnect() {
                 vibratePower = Number(args[1]);
                 if (vibratePower > peakVibratePower) {
                     peakVibratePower = vibratePower;
+                }
+            }
+            else if (args[0] == "pong") {
+                if (latencyTestCallback !== null) {
+                    latencyTestCallback(null);
                 }
             }
             else {
@@ -449,7 +459,7 @@ function toggleButtonRepeat(symbol) {
     if (buttonState.enabled) {
         turboButtonDown(symbol);
     }
-    updateButtonColor();
+    updateButtons();
 }
 function textToDirection(text) {
     var dpadDirection = dpadStr.indexOf(text);
@@ -458,66 +468,60 @@ function textToDirection(text) {
     }
     return dpadAltStr.indexOf(text.toUpperCase());
 }
-function buttonDown(text) {
+function buttonDown(symbol) {
     // dpad
-    var dpadDirection = textToDirection(text);
+    var dpadDirection = textToDirection(symbol);
     if (dpadDirection !== -1) {
         dpadChange(dpadDirection);
         return;
     }
-    var button = textToButtonTable[text.toUpperCase()];
-    if (button) {
-        var symbol = button[0];
-        var name_2 = button[2];
-        var mode = button[3];
-        if (mode == "button") {
-            command("bdown ".concat(name_2));
+    var attr = buttonTable[symbol];
+    if (attr) {
+        if (attr.mode == "button") {
+            command("bdown ".concat(attr.name));
         }
-        else if (mode == "trigger") {
-            command("".concat(name_2, " 1"));
+        else if (attr.mode == "trigger") {
+            command("".concat(attr.name, " 1"));
         }
         else {
-            console.warn("Unable to down button ".concat(text));
+            console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = true;
-        updateButtonColor();
+        updateButtons();
     }
     else {
-        console.warn("Unknown button ".concat(text));
+        console.warn("Unknown button ".concat(symbol));
     }
 }
-function buttonUp(text) {
-    var dpadDirection = textToDirection(text);
+function buttonUp(symbol) {
+    var dpadDirection = textToDirection(symbol);
     if (dpadDirection !== -1) {
         dpadChange(8);
         return;
     }
-    var button = textToButtonTable[text.toUpperCase()];
-    if (button) {
-        var symbol = button[0];
-        var name_3 = button[2];
-        var mode = button[3];
-        if (mode == "button") {
-            command("bup ".concat(name_3));
+    var attr = buttonTable[symbol];
+    if (attr) {
+        if (attr.mode == "button") {
+            command("bup ".concat(attr.name));
         }
-        else if (mode == "trigger") {
-            command("".concat(name_3, " 0"));
+        else if (attr.mode == "trigger") {
+            command("".concat(attr.name, " 0"));
         }
         else {
-            console.warn("Unable to up button ".concat(text));
+            console.warn("Unable to down button ".concat(symbol));
         }
         buttonPressed[symbol] = false;
-        updateButtonColor();
+        updateButtons();
     }
     else {
-        console.warn("Unknown button ".concat(text));
+        console.warn("Unknown button ".concat(symbol));
     }
 }
 function dpadChange(direction) {
     if (dpadPressed !== direction) {
         command("dpad ".concat(direction));
         dpadPressed = direction;
-        updateButtonColor();
+        updateButtons();
     }
 }
 function turboButtonDown(symbol) {
@@ -535,6 +539,10 @@ function macroLoop() {
         macroIndex = 0;
     }
     var step = macroSteps[macroIndex];
+    step = step.toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
+        step = textToSymbol[step];
+    }
     if (macroDown) {
         if (step !== ".") {
             buttonUp(step);
@@ -549,8 +557,73 @@ function macroLoop() {
         macroDown = true;
     }
 }
-function updateButtonColor() {
-    buttonNamed["PS"].style.backgroundColor = mainWebsocketColor;
+function checkLatency() {
+    if (mainWebsocket === null) {
+        latencyTestResults = [];
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+        return;
+    }
+    mainWebsocket.send("ping");
+    var latencyTestStart = new Date().getTime();
+    new Promise(function (resolve, reject) {
+        latencyTestCallback = resolve;
+        setTimeout(reject, latencyTestTimeout);
+    })
+        .then(function () {
+        latencyTestCallback = null;
+        var latencyTestStop = new Date().getTime();
+        latencyTestResults.push(latencyTestStop - latencyTestStart);
+        if (latencyTestResults.length > latencyTestResultMax) {
+            latencyTestResults.shift();
+        }
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+    })
+        .catch(function () {
+        latencyTestCallback = null;
+        latencyTestResults = [];
+        updateButtons();
+        setTimeout(checkLatency, latencyTestWait);
+    });
+}
+function updateButtons() {
+    var bMS = buttonNamed["MS"];
+    if (bMS instanceof HTMLButtonElement) {
+        bMS.classList.remove("button-good");
+        bMS.classList.remove("button-normal");
+        bMS.classList.remove("button-bad");
+        bMS.classList.remove("button-uncertain");
+        bMS.classList.remove("button-disconnected");
+        if (mainWebsocket === null) {
+            bMS.textContent = "!";
+            bMS.classList.add("button-disconnected");
+        }
+        else {
+            if (latencyTestResults.length == 0) {
+                bMS.textContent = "?";
+                bMS.classList.add("button-uncertain");
+            }
+            else {
+                var sum = 0;
+                for (var _i = 0, latencyTestResults_1 = latencyTestResults; _i < latencyTestResults_1.length; _i++) {
+                    var v = latencyTestResults_1[_i];
+                    sum += v;
+                }
+                sum = Math.floor(sum / latencyTestResults.length);
+                bMS.textContent = "".concat(sum, "ms");
+                if (sum < 25) {
+                    bMS.classList.add("button-good");
+                }
+                else if (sum < 100) {
+                    bMS.classList.add("button-normal");
+                }
+                else {
+                    bMS.classList.add("button-bad");
+                }
+            }
+        }
+    }
     Object.keys(buttonNamed).forEach(function (sym) {
         var button = buttonNamed[sym];
         if (sym[1] == "~") {
@@ -600,6 +673,7 @@ window.addEventListener("load", function () {
     reload();
     vibration();
     wsConnect();
+    checkLatency();
 });
 window.addEventListener("resize", reload);
 window.addEventListener("contextmenu", function (event) {
@@ -607,11 +681,21 @@ window.addEventListener("contextmenu", function (event) {
     event.preventDefault();
 });
 command("reset");
+var nosleep = new NoSleep();
 function toggleFullScreen() {
+    var _a, _b;
     if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
+        (_a = document.documentElement) === null || _a === void 0 ? void 0 : _a.requestFullscreen();
+        try {
+            (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
+        }
+        catch (e) {
+            console.warn(e);
+        }
+        nosleep.enable();
     }
     else if (document.exitFullscreen) {
         document.exitFullscreen();
+        nosleep.disable();
     }
 }
