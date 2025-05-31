@@ -1,3 +1,4 @@
+"use strict";
 var mainWebsocket = null;
 var vibratePower = 0;
 var peakVibratePower = 0;
@@ -10,7 +11,7 @@ var latencyTestCallback = null;
 var latencyTestTimeout = 1000;
 var latencyTestWait = 1000;
 var latencyTestResults = [];
-var latencyTestResultMax = 5;
+var latencyTestResultMax = 1;
 var buttonPressed = {};
 var textToSymbol = {};
 function log(x) {
@@ -533,6 +534,7 @@ function checkLatency() {
 function updateButtons() {
     var bMS = buttonNamed["MS"];
     if (bMS instanceof HTMLButtonElement) {
+        bMS.classList.remove("button-excellent");
         bMS.classList.remove("button-good");
         bMS.classList.remove("button-normal");
         bMS.classList.remove("button-bad");
@@ -555,10 +557,13 @@ function updateButtons() {
                 }
                 sum = Math.floor(sum / latencyTestResults.length);
                 bMS.textContent = "".concat(sum, "ms");
-                if (sum < 25) {
-                    bMS.classList.add("button-good");
+                if (sum < 50) {
+                    bMS.classList.add("button-excellent");
                 }
                 else if (sum < 100) {
+                    bMS.classList.add("button-good");
+                }
+                else if (sum < 200) {
                     bMS.classList.add("button-normal");
                 }
                 else {

@@ -60,8 +60,12 @@ body {
 .button-latency {
   border-radius: 5px;
 }
+
+.button-excellent {
+  background-color: #80c0ff;
+}
 .button-good {
-  background-color: #80c6ff;
+  background-color: #80f0f0;
 }
 .button-normal {
   background-color: #80ff80;
