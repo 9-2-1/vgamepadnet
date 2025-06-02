@@ -6,10 +6,13 @@ import asyncio
 import socket
 import os
 from aiohttp import web, WSMsgType
-from typing import Union, Optional
+from typing import Union, Optional, List
 
 log = logging.getLogger(__name__)
 # logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
+
+JOYSTICK_COUNT = 2
+MSG_TIMEOUT = 5
 
 
 class VGamepadNet:
@@ -96,7 +99,7 @@ class VGamepadNet:
     ) -> Union[web.WebSocketResponse, web.Response]:
         if self.ws is not None:
             return web.Response(status=403, text="Already connected")
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(heartbeat=MSG_TIMEOUT)
         await ws.prepare(request)
         self.ws = ws
 
@@ -163,16 +166,14 @@ class VGamepadNet:
 
 async def main() -> None:
     app = web.Application()
-    pad1 = VGamepadNet("1", "1")
-    pad2 = VGamepadNet("2", "2")
-    pad1.add_routes_to_app(app)
-    pad2.add_routes_to_app(app)
-    print("Player 1:")
-    for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-        print(f"http://{ipaddr}:35714/{pad1.path_prefix}/")
-    print("Player 2:")
-    for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-        print(f"http://{ipaddr}:35714/{pad2.path_prefix}/")
+    pads: List[VGamepadNet] = []
+    for i in range(JOYSTICK_COUNT):
+        pads.append(VGamepadNet(str(i + 1), str(i + 1)))
+        pads[i].add_routes_to_app(app)
+        print(f"Player {i}:")
+        for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
+            print(f"- http://{ipaddr}:35714/{pads[i].path_prefix}/")
+        print("")
 
     runner = web.AppRunner(app)
     await runner.setup()
