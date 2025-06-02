@@ -20,6 +20,7 @@ class VGamepadNet:
         self.vibrate_peak = 0
 
         self.ws: Optional[web.WebSocketResponse] = None
+        self.main_loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
 
         self.gamepad = vgamepad.VX360Gamepad()
         self.gamepad.register_notification(self.update_status)
@@ -56,7 +57,8 @@ class VGamepadNet:
             self.vibrate_peak = self.vibrate
         log.debug(f"< vibrate {self.vibrate}")
         if self.ws is not None:
-            asyncio.run(self.ws.send_str(f"vibrate {self.vibrate}"))
+            coro = self.ws.send_str(f"vibrate {self.vibrate}")
+            asyncio.run_coroutine_threadsafe(coro, self.main_loop)
 
     async def static_main_html(self, request: web.Request) -> web.Response:
         with open("main.html", "rb") as f:
@@ -159,7 +161,7 @@ class VGamepadNet:
             traceback.print_exc()
 
 
-if __name__ == "__main__":
+async def main() -> None:
     app = web.Application()
     pad1 = VGamepadNet("1", "1")
     pad2 = VGamepadNet("2", "2")
@@ -172,4 +174,14 @@ if __name__ == "__main__":
     for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
         print(f"http://{ipaddr}:35714/{pad2.path_prefix}/")
 
-    web.run_app(app, port=35714)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", 35714)
+    await site.start()
+
+    while True:
+        await asyncio.sleep(3600)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
