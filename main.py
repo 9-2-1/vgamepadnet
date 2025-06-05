@@ -4,13 +4,16 @@ import asyncio
 import socket
 import base64
 import os
-from typing import Awaitable, Union, Optional, Any, Callable
+from typing import Awaitable, Union, Optional, Callable
+import tkinter as tk
+from tkinter import ttk
+import threading
 
 from aiohttp import web, WSMsgType
 import vgamepad  # type: ignore
 
 log = logging.getLogger(__name__)
-# logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
+logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
 
 WS_HEARTBEAT = 2
 PORT = 35714
@@ -91,7 +94,7 @@ class VGamepadNet:
             else:
                 raise ValueError("args[0]")
         except Exception:
-            traceback.print_exc()
+            log.error(traceback.format_exc())
 
     def remove(self) -> None:
         del self.gamepad
@@ -134,51 +137,101 @@ async def dynamic_websocket_handler(
     return ws
 
 
-async def main() -> None:
-    app = web.Application()
+addr_list: list[str] = []
+addr_ready = threading.Event()
+gui_closed = threading.Event()
 
-    path_prefix: str
+
+def gui_main() -> None:
     try:
-        with open("path_prefix.txt", "r") as f:
-            path_prefix = f.read().strip()
-            if len(path_prefix) != 8 or not all(
-                ch in "234567abcdefghijklmnopqrstuvwxyz" for ch in path_prefix
-            ):
-                raise FileNotFoundError("Update format")
-    except FileNotFoundError:
-        path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
-        with open("path_prefix.txt", "w") as f:
-            f.write(path_prefix)
+        """主线程运行的GUI主函数"""
+        root = tk.Tk()
+        root.title("VGamepadNet")
+        root.geometry("400x300")
+        ttk.Label(root, text="当前访问链接：").pack(pady=5)
+        link_text = tk.Text(root, height=5, width=50)
+        link_text.pack(padx=10)
+        addr_ready.wait()
+        for addr in addr_list:
+            link_text.insert(tk.END, f"{addr}\n")
+        link_text.config(state=tk.DISABLED)  # 只读
+        ttk.Label(root, text="当前手柄连接数：").pack(pady=5)
+        pad_count_label = ttk.Label(root, text="0")
+        pad_count_label.pack()
 
-    app.add_routes(
-        [
-            web.get(f"/{path_prefix}/", static_resp("main.html", "text/html")),
-            web.get(
-                f"/{path_prefix}/script.js", static_resp("script.js", "text/javascript")
-            ),
-            web.get(
-                f"/{path_prefix}/nosleep.js",
-                static_resp("nosleep.js", "text/javascript"),
-            ),
-            web.get(
-                f"/{path_prefix}/style.css", static_resp("style.css", "text/stylesheet")
-            ),
-            web.get(f"/{path_prefix}/websocket", dynamic_websocket_handler),
+        def update_pad_count() -> None:
+            pad_count_label.config(text=str(len(gamepads)))
+            root.after(1000, update_pad_count)  # 每秒更新一次
+
+        update_pad_count()  # 启动更新循环
+
+        def on_closing() -> None:
+            gui_closed.set()
+            root.destroy()
+
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+        root.mainloop()
+    except Exception:
+        log.error(traceback.format_exc())
+
+
+async def async_main() -> None:
+    """asyncio事件循环运行的主协程"""
+    global addr_list, gui_closed, addr_ready
+    try:
+        app = web.Application()
+        path_prefix: str
+        try:
+            with open("path_prefix.txt", "r") as f:
+                path_prefix = f.read().strip()
+                if len(path_prefix) != 8 or not all(
+                    ch in "234567abcdefghijklmnopqrstuvwxyz" for ch in path_prefix
+                ):
+                    raise FileNotFoundError("Update format")
+        except FileNotFoundError:
+            path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
+            with open("path_prefix.txt", "w") as f:
+                f.write(path_prefix)
+        app.add_routes(
+            [
+                web.get(f"/{path_prefix}/", static_resp("main.html", "text/html")),
+                web.get(
+                    f"/{path_prefix}/script.js",
+                    static_resp("script.js", "text/javascript"),
+                ),
+                web.get(
+                    f"/{path_prefix}/nosleep.js",
+                    static_resp("nosleep.js", "text/javascript"),
+                ),
+                web.get(
+                    f"/{path_prefix}/style.css",
+                    static_resp("style.css", "text/stylesheet"),
+                ),
+                web.get(f"/{path_prefix}/websocket", dynamic_websocket_handler),
+            ]
+        )
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        await site.start()
+        addr_list = [
+            f"http://{ipaddr}:{PORT}/{path_prefix}/"
+            for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]
         ]
-    )
+        addr_ready.set()  # 地址列表准备完成，通知GUI线程
 
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
+        # 保持运行直到GUI关闭
+        await asyncio.to_thread(gui_closed.wait)
 
-    print(f"访问地址:")
-    for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-        print(f"- http://{ipaddr}:{PORT}/{path_prefix}/")
-
-    while True:
-        await asyncio.sleep(3600)
+        await runner.cleanup()
+    except Exception:
+        log.error(traceback.format_exc())
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio_thread = threading.Thread(
+        target=lambda: asyncio.run(async_main()), daemon=True
+    )
+    asyncio_thread.start()
+    gui_main()
+    asyncio_thread.join()
