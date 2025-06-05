@@ -1,0 +1,54 @@
+.container {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+}
+.controls {
+    position: absolute;
+    width: 100%;
+    bottom: 20px;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 20px;
+}
+.stick {
+    width: 80px;
+    height: 80px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 50%;
+    position: relative;
+}
+.stick::after {
+    content: '';
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    background: rgba(255,255,255,0.5);
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+.buttons {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+.button {
+    width: 60px;
+    height: 60px;
+    background: #ff4444;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+    position: absolute;
+    transition: opacity 0.2s;
+}
+.button[draggable="true"]:active {
+    opacity: 0.7;
+}
