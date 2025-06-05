@@ -6,7 +6,7 @@ import base64
 import os
 from typing import Awaitable, Union, Optional, Callable, List
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
 
 from aiohttp import web, WSMsgType
@@ -150,13 +150,15 @@ pad_count_label: Optional[ttk.Label] = None
 
 def on_async_error() -> None:
     global gui_root
-    tk.messagebox.showerror("服务异常", "后台服务发生错误，请查看debug.log获取详细信息")
-    gui_root.destroy()  # 关闭GUI窗口
+    messagebox.showerror("服务异常", "后台服务发生错误，请查看debug.log获取详细信息")
+    if gui_root is not None:
+        gui_root.destroy()  # 关闭GUI窗口
 
 
 def on_pad_count_change() -> None:
     global gui_root, pad_count_label, gamepads
-    pad_count_label.config(text=str(len(gamepads)))
+    if pad_count_label is not None:
+        pad_count_label.config(text=str(len(gamepads)))
 
 
 def gui_main() -> None:
@@ -239,7 +241,8 @@ async def async_main() -> None:
         await runner.cleanup()
     except Exception:
         log.error(traceback.format_exc())
-        gui_root.after(0, on_async_error)
+        if gui_root is not None:
+            gui_root.after(0, on_async_error)
 
 
 if __name__ == "__main__":
