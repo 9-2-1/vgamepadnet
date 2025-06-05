@@ -11,8 +11,9 @@ from typing import Union, Optional, List
 log = logging.getLogger(__name__)
 # logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
-JOYSTICK_COUNT = 2
-MSG_TIMEOUT = 5
+JOYSTICK_COUNT = 1
+WS_HEARTBEAT = 2
+PORT = 35714
 
 
 class VGamepadNet:
@@ -99,7 +100,7 @@ class VGamepadNet:
     ) -> Union[web.WebSocketResponse, web.Response]:
         if self.ws is not None:
             return web.Response(status=403, text="Already connected")
-        ws = web.WebSocketResponse(heartbeat=MSG_TIMEOUT)
+        ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT)
         await ws.prepare(request)
         self.ws = ws
 
@@ -172,12 +173,12 @@ async def main() -> None:
         pads[i].add_routes_to_app(app)
         print(f"Player {i}:")
         for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-            print(f"- http://{ipaddr}:35714/{pads[i].path_prefix}/")
+            print(f"- http://{ipaddr}:{PORT}/{pads[i].path_prefix}/")
         print("")
 
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", 35714)
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
 
     while True:
