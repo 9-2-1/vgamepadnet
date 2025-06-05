@@ -4,7 +4,7 @@ import asyncio
 import socket
 import base64
 import os
-from typing import Awaitable, Union, Optional, Callable
+from typing import Awaitable, Union, Optional, Callable, List
 import tkinter as tk
 from tkinter import ttk
 import threading
@@ -110,7 +110,7 @@ def static_resp(
     return callback
 
 
-gamepads: list[VGamepadNet] = []
+gamepads: List[VGamepadNet] = []
 gamepad_id_next = 1
 
 
@@ -119,6 +119,8 @@ async def dynamic_websocket_handler(
 ) -> Union[web.WebSocketResponse, web.Response]:
     global gamepads, gamepad_id_next
     gamepad = VGamepadNet(gamepad_id_next)
+    if gui_root is not None:
+        gui_root.after(0, on_pad_count_change)
     try:
         gamepad_id_next += 1
         ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT)
@@ -132,45 +134,55 @@ async def dynamic_websocket_handler(
                 log.error("ws connection closed with exception %s" % ws.exception())
     finally:
         gamepad.remove()
+        if gui_root is not None:
+            gui_root.after(0, on_pad_count_change)
         gamepads.remove(gamepad)
 
     return ws
 
 
-addr_list: list[str] = []
+addr_list: List[str] = []
 addr_ready = threading.Event()
 gui_closed = threading.Event()
+gui_root: Optional[tk.Tk] = None
+pad_count_label: Optional[ttk.Label] = None
+
+
+def on_async_error() -> None:
+    global gui_root
+    tk.messagebox.showerror("服务异常", "后台服务发生错误，请查看debug.log获取详细信息")
+    gui_root.destroy()  # 关闭GUI窗口
+
+
+def on_pad_count_change() -> None:
+    global gui_root, pad_count_label, gamepads
+    pad_count_label.config(text=str(len(gamepads)))
 
 
 def gui_main() -> None:
+    global gui_root, pad_count_label, gui_closed, addr_list
     try:
         """主线程运行的GUI主函数"""
-        root = tk.Tk()
-        root.title("VGamepadNet")
-        root.geometry("400x300")
-        ttk.Label(root, text="当前访问链接：").pack(pady=5)
-        link_text = tk.Text(root, height=5, width=50)
+        gui_root = tk.Tk()
+        gui_root.title("VGamepadNet")
+        gui_root.geometry("400x300")
+        ttk.Label(gui_root, text="当前访问链接：").pack(pady=5)
+        link_text = tk.Text(gui_root, height=5, width=50)
         link_text.pack(padx=10)
         addr_ready.wait()
         for addr in addr_list:
             link_text.insert(tk.END, f"{addr}\n")
         link_text.config(state=tk.DISABLED)  # 只读
-        ttk.Label(root, text="当前手柄连接数：").pack(pady=5)
-        pad_count_label = ttk.Label(root, text="0")
+        ttk.Label(gui_root, text="当前手柄连接数：").pack(pady=5)
+        pad_count_label = ttk.Label(gui_root, text="0")
         pad_count_label.pack()
-
-        def update_pad_count() -> None:
-            pad_count_label.config(text=str(len(gamepads)))
-            root.after(1000, update_pad_count)  # 每秒更新一次
-
-        update_pad_count()  # 启动更新循环
 
         def on_closing() -> None:
             gui_closed.set()
-            root.destroy()
+            gui_root.destroy()
 
-        root.protocol("WM_DELETE_WINDOW", on_closing)
-        root.mainloop()
+        gui_root.protocol("WM_DELETE_WINDOW", on_closing)
+        gui_root.mainloop()
     except Exception:
         log.error(traceback.format_exc())
 
@@ -221,11 +233,13 @@ async def async_main() -> None:
         addr_ready.set()  # 地址列表准备完成，通知GUI线程
 
         # 保持运行直到GUI关闭
-        await asyncio.to_thread(gui_closed.wait)
+        running_loop = asyncio.get_running_loop()
+        await running_loop.run_in_executor(None, gui_closed.wait)
 
         await runner.cleanup()
     except Exception:
         log.error(traceback.format_exc())
+        gui_root.after(0, on_async_error)
 
 
 if __name__ == "__main__":
