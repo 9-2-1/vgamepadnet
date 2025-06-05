@@ -1,0 +1,1 @@
+@start "" "%~dp0python-3.8.6-embed-win32\pythonw.exe" main.py
