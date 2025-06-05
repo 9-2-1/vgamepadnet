@@ -1,27 +1,27 @@
-import vgamepad
-import base64
 import logging
 import traceback
 import asyncio
 import socket
+import base64
 import os
+from typing import Awaitable, Union, Optional, Any, Callable
+
 from aiohttp import web, WSMsgType
-from typing import Union, Optional, List
+import vgamepad  # type: ignore
 
 log = logging.getLogger(__name__)
 # logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
-JOYSTICK_COUNT = 1
 WS_HEARTBEAT = 2
 PORT = 35714
 
 
 class VGamepadNet:
-    def __init__(self, pad_id: str, pad_name: str) -> None:
+    def __init__(self, pad_id: int) -> None:
         self.pad_id = pad_id
-        self.pad_name = pad_name
-        self.vibrate = 0
-        self.vibrate_peak = 0
+
+        self.vibrate = 0.0
+        self.vibrate_peak = 0.0
 
         self.ws: Optional[web.WebSocketResponse] = None
         self.main_loop: asyncio.AbstractEventLoop = asyncio.get_running_loop()
@@ -29,31 +29,7 @@ class VGamepadNet:
         self.gamepad = vgamepad.VX360Gamepad()
         self.gamepad.register_notification(self.update_status)
 
-        self.path_prefix: str
-        try:
-            with open(f"path_prefix_{self.pad_id}.txt", "r") as f:
-                self.path_prefix = f.read().strip()
-                if len(self.path_prefix) != 8 or not all(
-                    ch in "234567abcdefghijklmnopqrstuvwxyz" for ch in self.path_prefix
-                ):
-                    raise FileNotFoundError("Update format")
-        except FileNotFoundError:
-            self.path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
-            with open(f"path_prefix_{self.pad_id}.txt", "w") as f:
-                f.write(self.path_prefix)
-
-    def add_routes_to_app(self, app: web.Application) -> None:
-        app.add_routes(
-            [
-                web.get(f"/{self.path_prefix}/", self.static_main_html),
-                web.get(f"/{self.path_prefix}/script.js", self.static_script_js),
-                web.get(f"/{self.path_prefix}/nosleep.js", self.static_nosleep_js),
-                web.get(f"/{self.path_prefix}/style.css", self.static_style_css),
-                web.get(f"/{self.path_prefix}/websocket", self.get_websocket),
-            ]
-        )
-
-    def update_status(
+    def update_status(  # type: ignore
         self, client, target, large_motor, small_motor, led_number, user_data
     ):
         self.vibrate = max(large_motor, small_motor) / 255
@@ -64,56 +40,9 @@ class VGamepadNet:
             coro = self.ws.send_str(f"vibrate {self.vibrate}")
             asyncio.run_coroutine_threadsafe(coro, self.main_loop)
 
-    async def static_main_html(self, request: web.Request) -> web.Response:
-        with open("main.html", "rb") as f:
-            content = f.read()
-            return web.Response(body=content, charset="utf-8", content_type="text/html")
-
-    async def static_script_js(self, request: web.Request) -> web.Response:
-        with open("script.js", "rb") as f:
-            content = f.read()
-            return web.Response(
-                body=content, charset="utf-8", content_type="text/javascript"
-            )
-
-    async def static_nosleep_js(self, request: web.Request) -> web.Response:
-        with open("nosleep.js", "rb") as f:
-            content = f.read()
-            return web.Response(
-                body=content, charset="utf-8", content_type="text/javascript"
-            )
-
-    async def static_style_css(self, request: web.Request) -> web.Response:
-        with open("style.css", "rb") as f:
-            content = f.read()
-            return web.Response(
-                body=content, charset="utf-8", content_type="text/stylesheet"
-            )
-
     def gamepad_commands(self, cmds: str) -> None:
         for cmd in cmds.split("\n"):
             self.gamepad_command(cmd)
-
-    async def get_websocket(
-        self,
-        request: web.Request,
-    ) -> Union[web.WebSocketResponse, web.Response]:
-        if self.ws is not None:
-            return web.Response(status=403, text="Already connected")
-        ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT)
-        await ws.prepare(request)
-        self.ws = ws
-
-        try:
-            async for msg in ws:
-                if msg.type == WSMsgType.TEXT:
-                    self.gamepad_command(msg.data)
-                elif msg.type == WSMsgType.ERROR:
-                    log.error("ws connection closed with exception %s" % ws.exception())
-        finally:
-            self.ws = None
-
-        return ws
 
     def gamepad_command(self, cmd: str) -> None:
         log.debug(f"> {cmd}")
@@ -164,22 +93,88 @@ class VGamepadNet:
         except Exception:
             traceback.print_exc()
 
+    def remove(self) -> None:
+        del self.gamepad
+
+
+def static_resp(
+    filename: str, minetype: str
+) -> Callable[[web.Request], Awaitable[web.Response]]:
+    async def callback(request: web.Request) -> web.Response:
+        with open(filename, "rb") as f:
+            return web.Response(body=f.read(), charset="utf-8", content_type=minetype)
+
+    return callback
+
+
+gamepads: list[VGamepadNet] = []
+gamepad_id_next = 1
+
+
+async def dynamic_websocket_handler(
+    request: web.Request,
+) -> Union[web.WebSocketResponse, web.Response]:
+    global gamepads, gamepad_id_next
+    gamepad = VGamepadNet(gamepad_id_next)
+    try:
+        gamepad_id_next += 1
+        ws = web.WebSocketResponse(heartbeat=WS_HEARTBEAT)
+        await ws.prepare(request)
+        gamepad.ws = ws
+        gamepads.append(gamepad)
+        async for msg in ws:
+            if msg.type == WSMsgType.TEXT:
+                gamepad.gamepad_command(msg.data)
+            elif msg.type == WSMsgType.ERROR:
+                log.error("ws connection closed with exception %s" % ws.exception())
+    finally:
+        gamepad.remove()
+        gamepads.remove(gamepad)
+
+    return ws
+
 
 async def main() -> None:
     app = web.Application()
-    pads: List[VGamepadNet] = []
-    for i in range(JOYSTICK_COUNT):
-        pads.append(VGamepadNet(str(i + 1), str(i + 1)))
-        pads[i].add_routes_to_app(app)
-        print(f"Player {i}:")
-        for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
-            print(f"- http://{ipaddr}:{PORT}/{pads[i].path_prefix}/")
-        print("")
+
+    path_prefix: str
+    try:
+        with open("path_prefix.txt", "r") as f:
+            path_prefix = f.read().strip()
+            if len(path_prefix) != 8 or not all(
+                ch in "234567abcdefghijklmnopqrstuvwxyz" for ch in path_prefix
+            ):
+                raise FileNotFoundError("Update format")
+    except FileNotFoundError:
+        path_prefix = base64.b32encode(os.urandom(5)).decode("utf-8").lower()
+        with open("path_prefix.txt", "w") as f:
+            f.write(path_prefix)
+
+    app.add_routes(
+        [
+            web.get(f"/{path_prefix}/", static_resp("main.html", "text/html")),
+            web.get(
+                f"/{path_prefix}/script.js", static_resp("script.js", "text/javascript")
+            ),
+            web.get(
+                f"/{path_prefix}/nosleep.js",
+                static_resp("nosleep.js", "text/javascript"),
+            ),
+            web.get(
+                f"/{path_prefix}/style.css", static_resp("style.css", "text/stylesheet")
+            ),
+            web.get(f"/{path_prefix}/websocket", dynamic_websocket_handler),
+        ]
+    )
 
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+
+    print(f"访问地址:")
+    for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]:
+        print(f"- http://{ipaddr}:{PORT}/{path_prefix}/")
 
     while True:
         await asyncio.sleep(3600)
