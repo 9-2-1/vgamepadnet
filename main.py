@@ -164,7 +164,6 @@ def on_pad_count_change() -> None:
 def gui_main() -> None:
     global gui_root, pad_count_label, gui_closed, addr_list
     try:
-        """主线程运行的GUI主函数"""
         gui_root = tk.Tk()
         gui_root.title("VGamepadNet")
         gui_root.geometry("400x300")
@@ -190,7 +189,6 @@ def gui_main() -> None:
 
 
 async def async_main() -> None:
-    """asyncio事件循环运行的主协程"""
     global addr_list, gui_closed, addr_ready
     try:
         app = web.Application()
@@ -232,9 +230,8 @@ async def async_main() -> None:
             f"http://{ipaddr}:{PORT}/{path_prefix}/"
             for ipaddr in socket.gethostbyname_ex(socket.gethostname())[-1]
         ]
-        addr_ready.set()  # 地址列表准备完成，通知GUI线程
-
-        # 保持运行直到GUI关闭
+        addr_ready.set()  
+        
         running_loop = asyncio.get_running_loop()
         await running_loop.run_in_executor(None, gui_closed.wait)
 
