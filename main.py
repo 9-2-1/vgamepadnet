@@ -131,7 +131,8 @@ async def dynamic_websocket_handler(
             if msg.type == WSMsgType.TEXT:
                 gamepad.gamepad_command(msg.data)
             elif msg.type == WSMsgType.ERROR:
-                log.error("ws connection closed with exception %s" % ws.exception())
+                log.error("ws connection closed.")
+                log.error(repr(ws.exception()))
     finally:
         gamepad.remove()
         if gui_root is not None:
