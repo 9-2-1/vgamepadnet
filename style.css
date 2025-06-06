@@ -8,7 +8,7 @@ body {
   position: relative;
   align-content: center;
   text-align: center;
-  background-color: #808080;
+  background-color: #e8e8e8;
   user-select: none;
   overflow: hidden;
 }
@@ -16,25 +16,39 @@ body {
 .gridline {
   position: absolute;
   background-color: #ffffff;
-  border: 0.5px solid #888888;
+  border: 0.5px solid #d8d8d8;
 }
 
 .button {
   position: absolute;
-  background-color: #ffffff;
-  color: black;
+  background-color: #f8f8f8;
+  color: #00000080;
   align-content: center;
   text-align: center;
   border-radius: 100%;
+  box-shadow: 0 2px 5px #00000033;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #00000088;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.button-stick {
+  color: #00000033;
+}
+
+.button-turbo {
+  color: #00b7ff77;
+}
+
+.button-macroplay {
+  color: #00b7ff77;
 }
 
 .button-macrobar {
-  position: absolute;
-  background-color: #ffffff;
-  color: black;
-  align-content: center;
-  text-align: center;
-  border-radius: 5px;
+  border-radius: 8px;
 }
 
 .button-dpad {
@@ -61,24 +75,24 @@ body {
   background-color: #80ff80;
 }
 
+.button-macrobar:disabled {
+  background-color: #89deff;
+}
+
 .button-down.button-dpad-center {
   background-color: #d0ffd0;
 }
 
 .button-locked {
-  background-color: #90e0ff;
-}
-
-.button-locked.button-down {
-  background-color: #80e080;
+  background-color: #89deff;
 }
 
 .button-pressed {
-  background-color: #ffc0ff;
+  background-color: #ffa8e2;
 }
 
-.button-pressed.button-down {
-  background-color: #80ff80;
+.button-down {
+  background-color: #79e988;
 }
 
 .button-pressed.button-down.button-dpad-center {
@@ -88,18 +102,22 @@ body {
 .button-latency {
   border-radius: 5px;
 }
+
+.button-excellent {
+  background-color: #89deff;
+}
 .button-good {
-  background-color: #80c6ff;
+  background-color: #85e7e2;
 }
 .button-normal {
-  background-color: #80ff80;
+  background-color: #79e988;
 }
 .button-bad {
-  background-color: #f0f080;
+  background-color: #ffde7c;
 }
 .button-uncertain {
-  background-color: #ffa0ff;
+  background-color: #ffa8e2;
 }
 .button-disconnected {
-  background-color: #ffa0a0;
+  background-color: #ffabab;
 }

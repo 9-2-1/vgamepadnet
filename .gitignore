@@ -12,9 +12,11 @@
 ViGEmBus_1.22.0_x64_x86_arm64.exe
 
 # python386
+__pycache__
 python-3.8.6-embed-win32
-main.cmd
 
 # Path prefix
-path_prefix.txt
+path_prefix*.txt
 
+# debug
+*.log

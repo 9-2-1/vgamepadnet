@@ -12,7 +12,7 @@ let latencyTestCallback: ((value: unknown) => void) | null = null;
 const latencyTestTimeout = 1000;
 const latencyTestWait = 1000;
 let latencyTestResults: Array<number> = [];
-const latencyTestResultMax = 5;
+const latencyTestResultMax = 1;
 
 type ButtonTableRaw = [string, string, string, ButtonMode, number];
 type ButtonAttr = {
@@ -169,7 +169,7 @@ function createButton(
         OnInput = () => {
           const val = button.value.trim();
           macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
-          macroStr = macroSteps.join(" ");
+          macroStr = val;
         };
       }
       break;
@@ -207,6 +207,10 @@ function createButton(
   button.style.left = `${left}px`;
   button.style.height = `${height}px`;
   button.style.width = `${width}px`;
+  button.style.fontSize = `${height * 0.5}px`;
+  if (mode == "latency") {
+    button.style.fontSize = `${height * 0.3}px`;
+  }
   if (button instanceof HTMLButtonElement) {
     let oldDown = false;
     const TrackerRawPos = (down: boolean, x: number, y: number) => {
@@ -302,30 +306,37 @@ function vibration() {
       return;
     }
   }
-  if (peakVibratePower == 0) {
-    a.push(0);
+  const minunit = 5;
+  const tot = 100;
+  let totOn = 0;
+  let totOff = 0;
+  const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.7;
+  if (fixedPower >= 1) {
+    a.push(tot);
+  } else if (fixedPower <= 0) {
+    // pass
   } else {
-    const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.6;
-    let d = 0;
-    for (let i = 0; i < 50; i++) {
-      d += 10 * fixedPower;
-      let p = Math.floor(d);
-      d -= p;
-      if (p > 10) {
-        p = 10;
-      }
-      a.push(p);
-      a.push(10 - p);
-    } // 50*10=500ms
-    for (let i = 1; i < a.length - 1; i++) {
-      if (a[i] == 0) {
-        a[i - 1] += a[i + 1];
-        a.splice(i, 2);
-        i--;
+    while (totOn + totOff < tot) {
+      if (fixedPower > 0.5) {
+        totOff += minunit;
+        const on = Math.floor(
+          (totOff * fixedPower) / (1 - fixedPower) - totOn + 0.5,
+        );
+        a.push(on);
+        a.push(minunit);
+        totOn += on;
+      } else {
+        totOn += minunit;
+        const off = Math.floor(
+          (totOn * (1 - fixedPower)) / fixedPower - totOff + 0.5,
+        );
+        a.push(minunit);
+        a.push(off);
+        totOff += off;
       }
     }
   }
-  // log(`peak: ${peakVibratePower}`);
+  // log(`peak: ${peakVibratePower} a: ${a}`);
   navigator?.vibrate(a);
   oldViberatePower = peakVibratePower;
   oldViberateCount = 0;
@@ -335,15 +346,15 @@ setInterval(vibration, 10);
 const buttonmap = [
   "                                                                                ",
   "  LT                                  PS                                    RT  ",
-  "            LS                                              4:                  ",
+  "              LS                                            4:                  ",
   "                                                                                ",
-  "  LB            L.                                      3:      1:          RB  ",
+  "  LB              L.                                    3:      1:          RB  ",
   "                              SH      MS      OP                                ",
   "                                                            2:                  ",
   "                                                                                ",
   "                                                      RS                        ",
   "                                                                    4~          ",
-  "                    D+                            R.                            ",
+  "                          D+                      R.                            ",
   "                                                                3~      1~      ",
   "                                                                                ",
   "                                                                    2~          ",
@@ -375,15 +386,15 @@ const buttonTable: ButtonTable = parseButtonTable([
   ["PS", "PS", "special PS", "button", 3],
   ["TP", "■", "special TOUCHPAD", "button", 3],
   ["D+", "☩", "", "dpad", 5],
-  ["L.", "(L)", "lstick", "stick", 5],
-  ["R.", "(R)", "rstick", "stick", 5],
+  ["L.", "L", "lstick", "stick", 5],
+  ["R.", "R", "rstick", "stick", 5],
   ["LT", "LT", "ltrig", "trigger", 3],
   ["RT", "RT", "rtrig", "trigger", 3],
   ["[]", "⛶", "", "fullscreen", 3],
-  ["1~", "[○]", "normal CIRCLE", "turbo", 3],
-  ["2~", "[✕]", "normal CROSS", "turbo", 3],
-  ["3~", "[□]", "normal SQUARE", "turbo", 3],
-  ["4~", "[△]", "normal TRIANGLE", "turbo", 3],
+  ["1~", "○", "normal CIRCLE", "turbo", 3],
+  ["2~", "✕", "normal CROSS", "turbo", 3],
+  ["3~", "□", "normal SQUARE", "turbo", 3],
+  ["4~", "△", "normal TRIANGLE", "turbo", 3],
   ["IN", "", "", "macrobar", 3],
   ["MA", "▶", "", "macroplay", 3],
   ["MS", "⏲", "", "latency", 3],
@@ -451,7 +462,9 @@ function reload() {
             ? attr.size * 4 * buttonA
             : attr.size * buttonA,
         );
-        textToSymbol[attr.label] = symbol;
+        if (attr.mode == "button" || attr.mode == "trigger") {
+          textToSymbol[attr.label] = symbol;
+        }
       }
     }
   }
@@ -642,6 +655,7 @@ function checkLatency() {
 function updateButtons() {
   const bMS = buttonNamed["MS"];
   if (bMS instanceof HTMLButtonElement) {
+    bMS.classList.remove("button-excellent");
     bMS.classList.remove("button-good");
     bMS.classList.remove("button-normal");
     bMS.classList.remove("button-bad");
@@ -661,9 +675,11 @@ function updateButtons() {
         }
         sum = Math.floor(sum / latencyTestResults.length);
         bMS.textContent = `${sum}ms`;
-        if (sum < 25) {
-          bMS.classList.add("button-good");
+        if (sum < 50) {
+          bMS.classList.add("button-excellent");
         } else if (sum < 100) {
+          bMS.classList.add("button-good");
+        } else if (sum < 200) {
           bMS.classList.add("button-normal");
         } else {
           bMS.classList.add("button-bad");
