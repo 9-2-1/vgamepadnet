@@ -83,7 +83,7 @@ class Server:
         self.site = web.TCPSite(self.runner, host, port)
         await self.site.start()
         await self._close_event.wait()
-        for client in self.clients:
+        for client in self.clients.copy():
             await client.close()
         if self.runner is not None:
             await self.runner.cleanup()
