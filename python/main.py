@@ -17,7 +17,7 @@ from gui import (
 )
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
+logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
 
 HOST = "0.0.0.0"
 PORT = 35714

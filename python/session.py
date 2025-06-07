@@ -1,14 +1,18 @@
 import logging
 import traceback
 import asyncio
-from typing import Awaitable, Callable, Dict, Tuple, Set, Optional
+from typing import Awaitable, Callable, Dict, Tuple, Set, Optional, Union, Literal
 
 from aiohttp import web, WSMsgType, WSCloseCode
 import vgamepad  # type: ignore
 
 log = logging.getLogger(__name__)
 
-button_map = {
+
+XBOX_MODE = False
+
+
+button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {
     "Up": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,
     "Down": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,
     "Left": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,
@@ -27,6 +31,40 @@ button_map = {
 }
 
 
+button_map_ds4: Dict[
+    str, Union[vgamepad.DS4_BUTTONS, vgamepad.DS4_SPECIAL_BUTTONS, Literal["DPAD"]]
+] = {
+    "Up": "DPAD",
+    "Down": "DPAD",
+    "Left": "DPAD",
+    "Right": "DPAD",
+    "Start": vgamepad.DS4_BUTTONS.DS4_BUTTON_OPTIONS,
+    "Back": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHARE,
+    "LS": vgamepad.DS4_BUTTONS.DS4_BUTTON_THUMB_LEFT,
+    "RS": vgamepad.DS4_BUTTONS.DS4_BUTTON_THUMB_RIGHT,
+    "LB": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHOULDER_LEFT,
+    "RB": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHOULDER_RIGHT,
+    "Guide": vgamepad.DS4_SPECIAL_BUTTONS.DS4_SPECIAL_BUTTON_PS,
+    "A": vgamepad.DS4_BUTTONS.DS4_BUTTON_CROSS,
+    "B": vgamepad.DS4_BUTTONS.DS4_BUTTON_CIRCLE,
+    "X": vgamepad.DS4_BUTTONS.DS4_BUTTON_SQUARE,
+    "Y": vgamepad.DS4_BUTTONS.DS4_BUTTON_TRIANGLE,
+}
+
+
+direction_map_ds4 = {
+    (0, -1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_NORTH,
+    (1, -1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_NORTHEAST,
+    (1, 0): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_EAST,
+    (1, 1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_SOUTHEAST,
+    (0, 1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_SOUTH,
+    (-1, 1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_SOUTHWEST,
+    (-1, 0): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_WEST,
+    (-1, -1): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_NORTHWEST,
+    (0, 0): vgamepad.DS4_DPAD_DIRECTIONS.DS4_BUTTON_DPAD_NONE,
+}
+
+
 class Session:
     """
     一个连接的会话，这里直接控制一个新的虚拟手柄
@@ -37,7 +75,13 @@ class Session:
         self.ws = ws
         self.disconnected = False
         self.main_loop = asyncio.get_running_loop()
-        self.gamepad: Optional[vgamepad.VX360Gamepad] = vgamepad.VX360Gamepad()
+        self.gamepad: Optional[Union[vgamepad.VX360Gamepad, vgamepad.VDS4Gamepad]] = (
+            None
+        )
+        if XBOX_MODE:
+            self.gamepad = vgamepad.VX360Gamepad()
+        else:
+            self.gamepad = vgamepad.VDS4Gamepad()
 
         self.button_states: Dict[str, bool] = {}
         self.trigger_states: Dict[str, float] = {}
@@ -99,14 +143,43 @@ class Session:
             if args[0] == "button":
                 name = args[1]
                 value = int(args[2])
-                if name not in button_map:
-                    raise ValueError(f"button: unknown name {args[1]!r}")
-                self.button_states[name] = value == 1
-                button = button_map[name]
-                if value == 0:
-                    self.gamepad.release_button(button)
+                if isinstance(self.gamepad, vgamepad.VX360Gamepad):
+                    if name not in button_map_xbox:
+                        raise ValueError(f"button: unknown name {args[1]!r}")
+                    self.button_states[name] = value == 1
+                    button = button_map_xbox[name]
+                    if value == 0:
+                        self.gamepad.release_button(button)
+                    else:
+                        self.gamepad.press_button(button)
                 else:
-                    self.gamepad.press_button(button)
+                    if name not in button_map_ds4:
+                        raise ValueError(f"button: unknown name {args[1]!r}")
+                    self.button_states[name] = value == 1
+                    button = button_map_ds4[name]
+                    if button == "DPAD":
+                        dpad_x = 0
+                        if self.button_states.get("Left", False):
+                            dpad_x -= 1
+                        if self.button_states.get("Right", False):
+                            dpad_x += 1
+                        dpad_y = 0
+                        if self.button_states.get("Up", False):
+                            dpad_y -= 1
+                        if self.button_states.get("Down", False):
+                            dpad_y += 1
+                        direction = (dpad_x, dpad_y)
+                        self.gamepad.directional_pad(direction_map_ds4[direction])
+                    elif isinstance(button, vgamepad.DS4_SPECIAL_BUTTONS):
+                        if value == 0:
+                            self.gamepad.release_special_button(button)
+                        else:
+                            self.gamepad.press_special_button(button)
+                    else:
+                        if value == 0:
+                            self.gamepad.release_button(button)
+                        else:
+                            self.gamepad.press_button(button)
             elif args[0] == "stick":
                 name = args[1]
                 x = float(args[2])
@@ -119,6 +192,8 @@ class Session:
                     y = 1.0
                 elif y < -1.0:
                     y = -1.0
+                if isinstance(self.gamepad, vgamepad.VDS4Gamepad):
+                    y *= -1
                 if name == "LS":
                     self.stick_states[name] = (x, y)
                     self.gamepad.left_joystick_float(x, y)
