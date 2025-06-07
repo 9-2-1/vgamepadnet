@@ -1,4 +1,3 @@
-"use strict";
 var mainWebsocket = null;
 var vibratePower = 0;
 var peakVibratePower = 0;
@@ -65,7 +64,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                         x = 0;
                         y = 0;
                     }
-                    command("".concat(name, " ").concat(x, " ").concat(y));
+                    command("stick ".concat(name, " ").concat(x, " ").concat(y));
                 };
             }
             break;
@@ -81,7 +80,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                     else {
                         y = 0;
                     }
-                    command("".concat(name, " ").concat(y));
+                    command("trigger ".concat(name, " ").concat(y));
                 };
             }
             break;
@@ -307,21 +306,21 @@ var buttonTable = parseButtonTable([
     ["B:", "B", "B", "button", 3],
     ["X:", "X", "X", "button", 3],
     ["Y:", "Y", "Y", "button", 3],
-    ["LS", "LS", "LEFT_THUMB", "button", 3],
-    ["RS", "RS", "RIGHT_THUMB", "button", 3],
-    ["LB", "LB", "LEFT_SHOULDER", "button", 3],
-    ["RB", "RB", "RIGHT_SHOULDER", "button", 3],
-    ["DU", "↑", "DPAD_UP", "button", 3],
-    ["DD", "↓", "DPAD_DOWN", "button", 3],
-    ["DL", "←", "DPAD_LEFT", "button", 3],
-    ["DR", "→", "DPAD_RIGHT", "button", 3],
-    ["ST", "☰", "START", "button", 3],
-    ["BA", "❐", "BACK", "button", 3],
-    ["GU", "⭙", "GUIDE", "button", 3],
-    ["L.", "L", "lstick", "stick", 5],
-    ["R.", "R", "rstick", "stick", 5],
-    ["LT", "LT", "ltrig", "trigger", 3],
-    ["RT", "RT", "rtrig", "trigger", 3],
+    ["LS", "LS", "LS", "button", 3],
+    ["RS", "RS", "RS", "button", 3],
+    ["LB", "LB", "LB", "button", 3],
+    ["RB", "RB", "RB", "button", 3],
+    ["DU", "↑", "Up", "button", 3],
+    ["DD", "↓", "Down", "button", 3],
+    ["DL", "←", "Left", "button", 3],
+    ["DR", "→", "Right", "button", 3],
+    ["ST", "☰", "Start", "button", 3],
+    ["BA", "❐", "Back", "button", 3],
+    ["GU", "⭙", "Guide", "button", 3],
+    ["L.", "L", "LS", "stick", 5],
+    ["R.", "R", "RS", "stick", 5],
+    ["LT", "LT", "LT", "trigger", 3],
+    ["RT", "RT", "RT", "trigger", 3],
     ["[]", "⛶", "", "fullscreen", 3],
     ["A~", "A", "A", "turbo", 3],
     ["B~", "B", "B", "turbo", 3],
@@ -445,10 +444,10 @@ function buttonDown(symbol) {
     var attr = buttonTable[symbol];
     if (attr) {
         if (attr.mode == "button") {
-            command("bdown ".concat(attr.name));
+            command("button ".concat(attr.name, " 1"));
         }
         else if (attr.mode == "trigger") {
-            command("".concat(attr.name, " 1"));
+            command("trigger ".concat(attr.name, " 1"));
         }
         else {
             console.warn("Unable to down button ".concat(symbol));
@@ -464,10 +463,10 @@ function buttonUp(symbol) {
     var attr = buttonTable[symbol];
     if (attr) {
         if (attr.mode == "button") {
-            command("bup ".concat(attr.name));
+            command("button ".concat(attr.name, " 0"));
         }
         else if (attr.mode == "trigger") {
-            command("".concat(attr.name, " 0"));
+            command("trigger ".concat(attr.name, " 0"));
         }
         else {
             console.warn("Unable to down button ".concat(symbol));
