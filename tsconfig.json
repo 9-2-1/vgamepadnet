@@ -1,5 +1,5 @@
 {
-  "files": ["script.ts", "nosleep.d.ts"],
+  "include": ["html/**.ts"],
   "compilerOptions": {
     "lib": ["dom", "ES2015"]
   }
