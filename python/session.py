@@ -1,7 +1,7 @@
 import logging
 import traceback
 import asyncio
-from typing import Awaitable, Callable, Dict, Tuple, Set
+from typing import Awaitable, Callable, Dict, Tuple, Set, Optional
 
 from aiohttp import web, WSMsgType, WSCloseCode
 import vgamepad  # type: ignore
@@ -37,7 +37,7 @@ class Session:
         self.ws = ws
         self.disconnected = False
         self.main_loop = asyncio.get_running_loop()
-        self.gamepad = vgamepad.VX360Gamepad()
+        self.gamepad: Optional[vgamepad.VX360Gamepad] = vgamepad.VX360Gamepad()
 
         self.button_states: Dict[str, bool] = {}
         self.trigger_states: Dict[str, float] = {}
@@ -53,6 +53,8 @@ class Session:
         )  # 手柄数据变化时调用
 
     async def run(self) -> None:
+        if self.gamepad is None:
+            return
         self.gamepad.register_notification(self.on_gamepad_status)
         async for msg in self.ws:
             if msg.type == WSMsgType.TEXT:
@@ -89,6 +91,8 @@ class Session:
             asyncio.run_coroutine_threadsafe(cb(self), self.main_loop)
 
     async def on_message(self, cmd: str) -> None:
+        if self.gamepad is None:
+            return
         log.debug(f"> {cmd}")
         args = cmd.split(" ")
         try:
@@ -158,11 +162,19 @@ class Session:
             log.error(traceback.format_exc())
 
     async def close(self) -> None:
+        """
+        主动关闭连接
+        """
         if self.ws is not None and not self.ws.closed:
             await self.ws.close(code=WSCloseCode.GOING_AWAY, message=b"Server closed")
 
     async def on_close(self) -> None:
+        """
+        移除虚拟手柄
+        """
+        if self.gamepad is None:
+            return
         self.gamepad.unregister_notification()
         self.gamepad.reset()
         self.gamepad.update()
-        del self.gamepad
+        self.gamepad = None

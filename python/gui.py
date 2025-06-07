@@ -70,10 +70,10 @@ class GUI:
         self.title.pack()
         self.links_title = tkinter.Label(self.root, text="链接", font=("微软雅黑", 12))
         self.links_title.pack()
-        self.links_refresh = tkinter.Button(
-            self.root, text="刷新", command=self.links_refresh_on_click
+        self.links_refresh_button = tkinter.Button(
+            self.root, text="刷新", command=self.links_refresh
         )
-        self.links_refresh.pack()
+        self.links_refresh_button.pack()
         self.links = tkinter.Frame(self.root)
         self.links.pack()
         self.sessions_title = tkinter.Label(
@@ -89,6 +89,7 @@ class GUI:
         self.root.protocol("WM_DELETE_WINDOW", self.close)  # 关闭GUI时调用
         self.closed = False
 
+        self.links_refresh()
         self.cycle_queue()
 
     def mainloop(self) -> None:
@@ -98,7 +99,7 @@ class GUI:
         tkinter.messagebox.showerror("错误", "发生错误，请查看debug.log获取详细信息")
         self.close()
 
-    def links_refresh_on_click(self) -> None:
+    def links_refresh(self) -> None:
         for widget in self.links.winfo_children():
             widget.destroy()
         for link in socket.gethostbyname_ex(socket.gethostname())[2]:
@@ -135,10 +136,8 @@ class GUI:
     def session_add(self, session_id: int) -> None:
         if self.closed:
             return
-        session = tkinter.Frame(self.sessions)
-        session.pack(fill="x")
         session_id_label = tkinter.Label(
-            session, text=f"ID: {session_id}", font=("微软雅黑", 12)
+            self.sessions, text=f"ID: {session_id}", font=("微软雅黑", 12)
         )
         session_id_label.pack()
         self.session_named[session_id] = session_id_label
@@ -155,4 +154,5 @@ class GUI:
     def session_del(self, session_id: int) -> None:
         if self.closed:
             return
+        self.session_named[session_id].pack_forget()
         self.session_named[session_id].destroy()
