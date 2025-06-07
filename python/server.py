@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from pathlib import Path
-from typing import Awaitable, Union, Optional, Callable, List, Dict, Tuple, Set
+from typing import Awaitable, Union, Optional, Callable, Set
 
 from aiohttp import web
 
@@ -83,10 +83,10 @@ class Server:
         self.site = web.TCPSite(self.runner, host, port)
         await self.site.start()
         await self._close_event.wait()
-
-    async def close(self) -> None:
         for client in self.clients:
-            await client.on_close()
+            await client.close()
         if self.runner is not None:
             await self.runner.cleanup()
+
+    async def close(self) -> None:
         self._close_event.set()

@@ -1,10 +1,9 @@
 import logging
 import traceback
 import asyncio
-from typing import Awaitable, Union, Optional, Callable, List, Dict, Tuple, Set
-from dataclasses import dataclass
+from typing import Awaitable, Callable, Dict, Tuple, Set
 
-from aiohttp import web, WSMsgType
+from aiohttp import web, WSMsgType, WSCloseCode
 import vgamepad  # type: ignore
 
 log = logging.getLogger(__name__)
@@ -158,10 +157,12 @@ class Session:
         except Exception:
             log.error(traceback.format_exc())
 
+    async def close(self) -> None:
+        if self.ws is not None and not self.ws.closed:
+            await self.ws.close(code=WSCloseCode.GOING_AWAY, message=b"Server closed")
+
     async def on_close(self) -> None:
-        if self.ws is not None:
-            await self.ws.close()
-        self.gamepad.unregister_notification(self.on_gamepad_status)
+        self.gamepad.unregister_notification()
         self.gamepad.reset()
         self.gamepad.update()
         del self.gamepad

@@ -1,10 +1,10 @@
 import logging
 import tkinter
-import tkinter.ttk
 import tkinter.messagebox
 import socket
+import queue
 from dataclasses import dataclass
-from typing import Awaitable, Union, Optional, Callable, List, Dict, Tuple, Set
+from typing import Callable, Dict, Tuple, Set, Union
 from copy import deepcopy
 
 from session import Session
@@ -33,6 +33,34 @@ class GUISessionState:
         )
 
 
+@dataclass
+class GUISessionAddEvent:
+    session_id: int
+
+
+@dataclass
+class GUISessionChangeEvent:
+    session_id: int
+    state: GUISessionState
+
+
+@dataclass
+class GUISessionDelEvent:
+    session_id: int
+
+
+@dataclass
+class GUIErrorEvent:
+    pass
+
+
+GUIEvent = Union[
+    GUISessionAddEvent, GUISessionChangeEvent, GUISessionDelEvent, GUIErrorEvent
+]
+
+CYCLE_MS = 10
+
+
 class GUI:
     def __init__(self) -> None:
         self.root = tkinter.Tk()
@@ -55,10 +83,13 @@ class GUI:
         self.sessions = tkinter.Frame(self.root)
         self.sessions.pack()
 
+        self.queue: queue.Queue[GUIEvent] = queue.Queue()
         self.session_named: Dict[int, tkinter.Widget] = {}
-
         self.on_close: Set[Callable[[], None]] = set()  # 关闭GUI时调用
-        self.root.protocol("WM_DELETE_WINDOW", self.on_close_button)  # 关闭GUI时调用
+        self.root.protocol("WM_DELETE_WINDOW", self.close)  # 关闭GUI时调用
+        self.closed = False
+
+        self.cycle_queue()
 
     def mainloop(self) -> None:
         self.root.mainloop()
@@ -78,15 +109,32 @@ class GUI:
             link_label.configure(state="disabled")
             link_label.pack(fill="x")
 
-    def on_close_button(self) -> None:
-        self.close()
-
     def close(self) -> None:
+        if self.closed:
+            return
         for cb in self.on_close:
             cb()
         self.root.destroy()
+        self.closed = True
+
+    def cycle_queue(self) -> None:
+        try:
+            while True:
+                event = self.queue.get_nowait()
+                if isinstance(event, GUISessionAddEvent):
+                    self.session_add(event.session_id)
+                elif isinstance(event, GUISessionChangeEvent):
+                    self.session_change(event.session_id, event.state)
+                elif isinstance(event, GUISessionDelEvent):
+                    self.session_del(event.session_id)
+        except queue.Empty:
+            self.root.after(CYCLE_MS, self.cycle_queue)
+        except queue.ShutDown:
+            self.close()
 
     def session_add(self, session_id: int) -> None:
+        if self.closed:
+            return
         session = tkinter.Frame(self.sessions)
         session.pack(fill="x")
         session_id_label = tkinter.Label(
@@ -95,24 +143,16 @@ class GUI:
         session_id_label.pack()
         self.session_named[session_id] = session_id_label
 
-    def session_add_after_idle(self, session_id: int) -> None:
-        self.root.after_idle(lambda: self.session_add(session_id))
-
     def session_change(self, session_id: int, state: GUISessionState) -> None:
+        if self.closed:
+            return
         label = self.session_named[session_id]
         assert isinstance(label, tkinter.Label)
         label.configure(
             text=f"ID: {session_id}\n按钮: {state.button_states}\n扳机: {state.trigger_states}\n摇杆: {state.stick_states}\n大电机: {state.large_motor}\n小电机: {state.small_motor}\nLED: {state.led_number}"
         )
 
-    def session_change_after_idle(
-        self, session_id: int, state: GUISessionState
-    ) -> None:
-        self.root.after_idle(lambda: self.session_change(session_id, state))
-
     def session_del(self, session_id: int) -> None:
+        if self.closed:
+            return
         self.session_named[session_id].destroy()
-        del self.session_named[session_id]
-
-    def session_del_after_idle(self, session_id: int) -> None:
-        self.root.after_idle(lambda: self.session_del(session_id))

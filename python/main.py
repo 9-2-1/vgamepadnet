@@ -1,20 +1,23 @@
 import logging
-from re import S
 import traceback
 import asyncio
 import base64
 import os
 import threading
-from dataclasses import dataclass
-from copy import deepcopy
-from typing import Dict, Tuple
 
 from session import Session
 from server import Server
-from gui import GUI, GUISessionState
+from gui import (
+    GUI,
+    GUISessionState,
+    GUISessionAddEvent,
+    GUISessionChangeEvent,
+    GUISessionDelEvent,
+    GUIErrorEvent,
+)
 
 log = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
+logging.basicConfig(level=logging.DEBUG, filename="debug.log", filemode="a")
 
 HOST = "0.0.0.0"
 PORT = 35714
@@ -53,16 +56,19 @@ async def server_main(gui: GUI) -> None:
         asyncio.run_coroutine_threadsafe(server.close(), server.main_loop)
 
     async def gui_session_add(server: Server, session: Session) -> None:
-        gui.session_add_after_idle(session.session_id)
+        gui.queue.put(GUISessionAddEvent(session.session_id))
         session.on_change.add(gui_session_change)
 
     async def gui_session_change(session: Session) -> None:
-        gui.session_change_after_idle(
-            session.session_id, GUISessionState.from_session(session)
+        gui.queue.put(
+            GUISessionChangeEvent(
+                session.session_id, GUISessionState.from_session(session)
+            )
         )
 
     async def gui_session_del(server: Server, session: Session) -> None:
-        gui.session_del_after_idle(session.session_id)
+        gui.queue.put(GUISessionDelEvent(session.session_id))
+        session.on_change.remove(gui_session_change)
 
     server.on_connect.add(gui_session_add)
     server.on_disconnect.add(gui_session_del)
@@ -76,8 +82,8 @@ def server_thread_func(gui: GUI) -> None:
         asyncio.run(server_main(gui))
     except Exception:
         log.error(traceback.format_exc())
-        gui.report_error()
-        gui.close()
+        gui.queue.put(GUIErrorEvent())
+        gui.queue.shutdown()
 
 
 def main() -> None:
