@@ -626,7 +626,6 @@ window.addEventListener("contextmenu", function (event) {
     event.stopPropagation();
     event.preventDefault();
 });
-command("reset");
 var nosleep = new NoSleep();
 function toggleFullScreen() {
     var _a, _b;

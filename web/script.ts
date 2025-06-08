@@ -674,7 +674,6 @@ window.addEventListener("contextmenu", (event) => {
   event.stopPropagation();
   event.preventDefault();
 });
-command("reset");
 
 const nosleep = new NoSleep();
 

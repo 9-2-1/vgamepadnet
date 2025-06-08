@@ -76,7 +76,7 @@ class Server:
         )
         self.app.router.add_get(
             f"/{path_prefix}/style.css",
-            self.static_resp("style.css", "text/stylesheet"),
+            self.static_resp("style.css", "text/css"),
         )
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
