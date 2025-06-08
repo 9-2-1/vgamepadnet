@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Tuple, Set, Union
 from copy import deepcopy
 
-from session import Session
+from .session import Session
 
 log = logging.getLogger(__name__)
 

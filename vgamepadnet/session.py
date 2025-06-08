@@ -9,7 +9,7 @@ import vgamepad  # type: ignore
 log = logging.getLogger(__name__)
 
 
-XBOX_MODE = False
+XBOX_MODE = True
 
 
 button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {

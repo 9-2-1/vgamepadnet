@@ -5,7 +5,7 @@ from typing import Awaitable, Union, Optional, Callable, Set
 
 from aiohttp import web
 
-from session import Session
+from .session import Session
 
 log = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class Server:
         filename: str, minetype: str
     ) -> Callable[[web.Request], Awaitable[web.Response]]:
         async def callback(request: web.Request) -> web.Response:
-            with open(Path(__file__).parent.parent / "html" / filename, "rb") as f:
+            with open(Path(__file__).parent.parent / "web" / filename, "rb") as f:
                 return web.Response(
                     body=f.read(), charset="utf-8", content_type=minetype
                 )

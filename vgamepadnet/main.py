@@ -5,9 +5,9 @@ import base64
 import os
 import threading
 
-from session import Session
-from server import Server
-from gui import (
+from .session import Session
+from .server import Server
+from .gui import (
     GUI,
     GUISessionState,
     GUISessionAddEvent,
@@ -94,7 +94,3 @@ def main() -> None:
     server_thread.start()
     gui.mainloop()
     server_thread.join()
-
-
-if __name__ == "__main__":
-    main()

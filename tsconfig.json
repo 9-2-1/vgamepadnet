@@ -1,5 +1,5 @@
 {
-  "include": ["html/**.ts"],
+  "include": ["web/**.ts"],
   "compilerOptions": {
     "lib": ["dom", "ES2015"]
   }
