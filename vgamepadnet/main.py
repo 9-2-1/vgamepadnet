@@ -22,16 +22,6 @@ logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
 HOST = "0.0.0.0"
 PORT = 35714
 
-button_symbol = {
-    "Up": "↑",
-    "Down": "↓",
-    "Left": "←",
-    "Right": "→",
-    "Start": "☰",
-    "Back": "❐",
-    "Guide": "⭙",
-}
-
 
 def get_path_prefix() -> str:
     try:

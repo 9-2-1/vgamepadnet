@@ -23,10 +23,12 @@ type ButtonAttr = {
 };
 type ButtonTable = Record<string, ButtonAttr>;
 let buttonPressed: Record<string, boolean> = {};
-let textToSymbol: Record<string, string> = {};
+const textToSymbol: Record<string, string> = {};
+
+let state_out: Record<string, number> = {};
 
 function log(x: any): void {
-  command(`L ${JSON.stringify(x)}`);
+  command(`log ${JSON.stringify(x)}`);
 }
 
 function command(x: string): void {
@@ -98,7 +100,7 @@ function createButton(
             x = 0;
             y = 0;
           }
-          command(`stick ${name} ${x} ${y}`);
+          command(`set ${name}x ${x} ${name}y ${y}`);
         };
       }
       break;
@@ -113,7 +115,7 @@ function createButton(
           } else {
             y = 0;
           }
-          command(`trigger ${name} ${y}`);
+          command(`set ${name} ${y}`);
         };
       }
 
@@ -350,13 +352,13 @@ const buttonTable: ButtonTable = parseButtonTable([
   ["RS", "RS", "RS", "button", 3],
   ["LB", "LB", "LB", "button", 3],
   ["RB", "RB", "RB", "button", 3],
-  ["DU", "↑", "Up", "button", 3],
-  ["DD", "↓", "Down", "button", 3],
-  ["DL", "←", "Left", "button", 3],
-  ["DR", "→", "Right", "button", 3],
-  ["ST", "☰", "Start", "button", 3],
-  ["BA", "❐", "Back", "button", 3],
-  ["GU", "⭙", "Guide", "button", 3],
+  ["DU", "↑", "up", "button", 3],
+  ["DD", "↓", "down", "button", 3],
+  ["DL", "←", "left", "button", 3],
+  ["DR", "→", "right", "button", 3],
+  ["ST", "☰", "start", "button", 3],
+  ["BA", "❐", "back", "button", 3],
+  ["GU", "⭙", "guide", "button", 3],
   ["L.", "L", "LS", "stick", 5],
   ["R.", "R", "RS", "stick", 5],
   ["LT", "LT", "LT", "trigger", 3],
@@ -433,7 +435,8 @@ function reload() {
             : attr.size * buttonA,
         );
         if (attr.mode == "button" || attr.mode == "trigger") {
-          textToSymbol[attr.label] = symbol;
+          textToSymbol[symbol.toUpperCase()] = symbol;
+          textToSymbol[attr.label.toUpperCase()] = symbol;
         }
       }
     }
@@ -471,8 +474,10 @@ function wsConnect() {
     const msg = event.data;
     if (typeof msg == "string") {
       const args = msg.split(" ");
-      if (args[0] == "vibrate") {
-        vibratePower = Number(args[1]);
+      if (args[0] == "set") {
+        const large_motor = state_out["large_motor"] ?? 0;
+        const small_motor = state_out["small_motor"] ?? 0;
+        const vibratePower = Math.max(large_motor, small_motor);
         if (vibratePower > peakVibratePower) {
           peakVibratePower = vibratePower;
         }
@@ -503,10 +508,8 @@ function toggleButtonRepeat(symbol: string) {
 function buttonDown(symbol: string) {
   const attr = buttonTable[symbol];
   if (attr) {
-    if (attr.mode == "button") {
-      command(`button ${attr.name} 1`);
-    } else if (attr.mode == "trigger") {
-      command(`trigger ${attr.name} 1`);
+    if (attr.mode == "button" || attr.mode == "trigger") {
+      command(`set ${attr.name} 1`);
     } else {
       console.warn(`Unable to down button ${symbol}`);
     }
@@ -519,10 +522,8 @@ function buttonDown(symbol: string) {
 function buttonUp(symbol: string) {
   const attr = buttonTable[symbol];
   if (attr) {
-    if (attr.mode == "button") {
-      command(`button ${attr.name} 0`);
-    } else if (attr.mode == "trigger") {
-      command(`trigger ${attr.name} 0`);
+    if (attr.mode == "button" || attr.mode == "trigger") {
+      command(`set ${attr.name} 0`);
     } else {
       console.warn(`Unable to down button ${symbol}`);
     }

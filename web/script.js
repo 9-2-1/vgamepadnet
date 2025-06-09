@@ -13,8 +13,9 @@ var latencyTestResults = [];
 var latencyTestResultMax = 1;
 var buttonPressed = {};
 var textToSymbol = {};
+var state_out = {};
 function log(x) {
-    command("L ".concat(JSON.stringify(x)));
+    command("log ".concat(JSON.stringify(x)));
 }
 function command(x) {
     if (mainWebsocket !== null) {
@@ -64,7 +65,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                         x = 0;
                         y = 0;
                     }
-                    command("stick ".concat(name, " ").concat(x, " ").concat(y));
+                    command("set ".concat(name, "x ").concat(x, " ").concat(name, "y ").concat(y));
                 };
             }
             break;
@@ -80,7 +81,7 @@ function createButton(mode, label, name, symbol, top, left, height, width) {
                     else {
                         y = 0;
                     }
-                    command("trigger ".concat(name, " ").concat(y));
+                    command("set ".concat(name, " ").concat(y));
                 };
             }
             break;
@@ -310,13 +311,13 @@ var buttonTable = parseButtonTable([
     ["RS", "RS", "RS", "button", 3],
     ["LB", "LB", "LB", "button", 3],
     ["RB", "RB", "RB", "button", 3],
-    ["DU", "↑", "Up", "button", 3],
-    ["DD", "↓", "Down", "button", 3],
-    ["DL", "←", "Left", "button", 3],
-    ["DR", "→", "Right", "button", 3],
-    ["ST", "☰", "Start", "button", 3],
-    ["BA", "❐", "Back", "button", 3],
-    ["GU", "⭙", "Guide", "button", 3],
+    ["DU", "↑", "up", "button", 3],
+    ["DD", "↓", "down", "button", 3],
+    ["DL", "←", "left", "button", 3],
+    ["DR", "→", "right", "button", 3],
+    ["ST", "☰", "start", "button", 3],
+    ["BA", "❐", "back", "button", 3],
+    ["GU", "⭙", "guide", "button", 3],
     ["L.", "L", "LS", "stick", 5],
     ["R.", "R", "RS", "stick", 5],
     ["LT", "LT", "LT", "trigger", 3],
@@ -373,7 +374,8 @@ function reload() {
                     ? attr.size * 4 * buttonA
                     : attr.size * buttonA);
                 if (attr.mode == "button" || attr.mode == "trigger") {
-                    textToSymbol[attr.label] = symbol;
+                    textToSymbol[symbol.toUpperCase()] = symbol;
+                    textToSymbol[attr.label.toUpperCase()] = symbol;
                 }
             }
         }
@@ -407,13 +409,16 @@ function wsConnect() {
         setTimeout(wsConnect, 5000);
     });
     nextWebsocket.addEventListener("message", function (event) {
+        var _a, _b;
         var msg = event.data;
         if (typeof msg == "string") {
             var args = msg.split(" ");
-            if (args[0] == "vibrate") {
-                vibratePower = Number(args[1]);
-                if (vibratePower > peakVibratePower) {
-                    peakVibratePower = vibratePower;
+            if (args[0] == "set") {
+                var large_motor = (_a = state_out["large_motor"]) !== null && _a !== void 0 ? _a : 0;
+                var small_motor = (_b = state_out["small_motor"]) !== null && _b !== void 0 ? _b : 0;
+                var vibratePower_1 = Math.max(large_motor, small_motor);
+                if (vibratePower_1 > peakVibratePower) {
+                    peakVibratePower = vibratePower_1;
                 }
             }
             else if (args[0] == "pong") {
@@ -443,11 +448,8 @@ function toggleButtonRepeat(symbol) {
 function buttonDown(symbol) {
     var attr = buttonTable[symbol];
     if (attr) {
-        if (attr.mode == "button") {
-            command("button ".concat(attr.name, " 1"));
-        }
-        else if (attr.mode == "trigger") {
-            command("trigger ".concat(attr.name, " 1"));
+        if (attr.mode == "button" || attr.mode == "trigger") {
+            command("set ".concat(attr.name, " 1"));
         }
         else {
             console.warn("Unable to down button ".concat(symbol));
@@ -462,11 +464,8 @@ function buttonDown(symbol) {
 function buttonUp(symbol) {
     var attr = buttonTable[symbol];
     if (attr) {
-        if (attr.mode == "button") {
-            command("button ".concat(attr.name, " 0"));
-        }
-        else if (attr.mode == "trigger") {
-            command("trigger ".concat(attr.name, " 0"));
+        if (attr.mode == "button" || attr.mode == "trigger") {
+            command("set ".concat(attr.name, " 0"));
         }
         else {
             console.warn("Unable to down button ".concat(symbol));

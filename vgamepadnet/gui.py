@@ -4,32 +4,49 @@ import tkinter.messagebox
 import socket
 import queue
 from dataclasses import dataclass
-from typing import Callable, Dict, Tuple, Set, Union
+from typing import Callable, Dict, Set, Union, DefaultDict
 from copy import deepcopy
+import textwrap
 
 from .session import Session
 
 log = logging.getLogger(__name__)
 
+button_symbol_xbox = {
+    "Up": "↑",
+    "Down": "↓",
+    "Left": "←",
+    "Right": "→",
+    "Start": "☰",
+    "Back": "❐",
+    "Guide": "⭙",
+}
+
+
+button_symbol_ds4 = {
+    "Up": "↑",
+    "Down": "↓",
+    "Left": "←",
+    "Right": "→",
+    "Start": "☰",
+    "Back": "❐",
+    "Guide": "PS",
+}
+
 
 @dataclass
 class GUISessionState:
-    button_states: Dict[str, bool]
-    trigger_states: Dict[str, float]
-    stick_states: Dict[str, Tuple[float, float]]
-    large_motor: float
-    small_motor: float
-    led_number: int
+    xbox_mode: bool
+
+    state: DefaultDict[str, Union[int, float]]
+    state_out: DefaultDict[str, Union[int, float]]
 
     @classmethod
     def from_session(cls, session: Session) -> "GUISessionState":
         return cls(
-            deepcopy(session.button_states),
-            deepcopy(session.trigger_states),
-            deepcopy(session.stick_states),
-            session.large_motor,
-            session.small_motor,
-            session.led_number,
+            xbox_mode=session.xbox_mode,
+            state=deepcopy(session.state),
+            state_out=deepcopy(session.state_out),
         )
 
 
@@ -137,7 +154,7 @@ class GUI:
         if self.closed:
             return
         session_id_label = tkinter.Label(
-            self.sessions, text=f"ID: {session_id}", font=("微软雅黑", 12)
+            self.sessions, text=f"{session_id}", font=("Fira Mono", 12), justify="left"
         )
         session_id_label.pack()
         self.session_named[session_id] = session_id_label
@@ -147,8 +164,13 @@ class GUI:
             return
         label = self.session_named[session_id]
         assert isinstance(label, tkinter.Label)
+        sign = "(X)" if state.xbox_mode else "(PS)"
         label.configure(
-            text=f"ID: {session_id}\n按钮: {state.button_states}\n扳机: {state.trigger_states}\n摇杆: {state.stick_states}\n大电机: {state.large_motor}\n小电机: {state.small_motor}\nLED: {state.led_number}"
+            text="\n".join(
+                textwrap.wrap(
+                    f"{session_id} {sign} {state.state} {state.state_out}", 70
+                )
+            )
         )
 
     def session_del(self, session_id: int) -> None:
