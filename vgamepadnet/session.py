@@ -9,21 +9,21 @@ import vgamepad  # type: ignore
 log = logging.getLogger(__name__)
 
 
-XBOX_MODE = True
+XBOX_MODE = False
 
 
 button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {
-    "Up": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,
-    "Down": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,
-    "Left": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,
-    "Right": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,
-    "Start": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_START,
-    "Back": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_BACK,
+    "up": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_UP,
+    "down": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_DOWN,
+    "left": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_LEFT,
+    "right": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_DPAD_RIGHT,
+    "start": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_START,
+    "back": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_BACK,
     "LS": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_THUMB,
     "RS": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_THUMB,
     "LB": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_LEFT_SHOULDER,
     "RB": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER,
-    "Guide": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_GUIDE,
+    "guide": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_GUIDE,
     "A": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_A,
     "B": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_B,
     "X": vgamepad.XUSB_BUTTON.XUSB_GAMEPAD_X,
@@ -34,17 +34,17 @@ button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {
 button_map_ds4: Dict[
     str, Union[vgamepad.DS4_BUTTONS, vgamepad.DS4_SPECIAL_BUTTONS, Literal["DPAD"]]
 ] = {
-    "Up": "DPAD",
-    "Down": "DPAD",
-    "Left": "DPAD",
-    "Right": "DPAD",
-    "Start": vgamepad.DS4_BUTTONS.DS4_BUTTON_OPTIONS,
-    "Back": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHARE,
+    "up": "DPAD",
+    "down": "DPAD",
+    "left": "DPAD",
+    "right": "DPAD",
+    "start": vgamepad.DS4_BUTTONS.DS4_BUTTON_OPTIONS,
+    "back": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHARE,
     "LS": vgamepad.DS4_BUTTONS.DS4_BUTTON_THUMB_LEFT,
     "RS": vgamepad.DS4_BUTTONS.DS4_BUTTON_THUMB_RIGHT,
     "LB": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHOULDER_LEFT,
     "RB": vgamepad.DS4_BUTTONS.DS4_BUTTON_SHOULDER_RIGHT,
-    "Guide": vgamepad.DS4_SPECIAL_BUTTONS.DS4_SPECIAL_BUTTON_PS,
+    "guide": vgamepad.DS4_SPECIAL_BUTTONS.DS4_SPECIAL_BUTTON_PS,
     "A": vgamepad.DS4_BUTTONS.DS4_BUTTON_CROSS,
     "B": vgamepad.DS4_BUTTONS.DS4_BUTTON_CIRCLE,
     "X": vgamepad.DS4_BUTTONS.DS4_BUTTON_SQUARE,
