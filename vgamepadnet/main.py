@@ -4,17 +4,13 @@ import asyncio
 import base64
 import os
 import threading
+import socket
+from typing import List
 
 from .session import Session
 from .server import Server
-from .gui import (
-    GUI,
-    GUISessionState,
-    GUISessionAddEvent,
-    GUISessionChangeEvent,
-    GUISessionDelEvent,
-    GUIErrorEvent,
-)
+from . import gui
+from .gui import GUI
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
@@ -39,48 +35,58 @@ def get_path_prefix() -> str:
         return path_prefix
 
 
-async def server_main(gui: GUI) -> None:
+async def server_main(guiwindow: GUI) -> None:
     server = Server()
 
     def server_close_threadsafe() -> None:
         asyncio.run_coroutine_threadsafe(server.close(), server.main_loop)
 
     async def gui_session_add(server: Server, session: Session) -> None:
-        gui.queue.put(GUISessionAddEvent(session.session_id))
+        guiwindow.queue.put(gui.SessionAddEvent(session.session_id))
         session.on_change.add(gui_session_change)
 
     async def gui_session_change(session: Session) -> None:
-        gui.queue.put(
-            GUISessionChangeEvent(
-                session.session_id, GUISessionState.from_session(session)
+        guiwindow.queue.put(
+            gui.SessionChangeEvent(
+                session.session_id, gui.SessionState.from_session(session)
             )
         )
 
     async def gui_session_del(server: Server, session: Session) -> None:
-        gui.queue.put(GUISessionDelEvent(session.session_id))
+        guiwindow.queue.put(gui.SessionDelEvent(session.session_id))
         session.on_change.remove(gui_session_change)
+
+    path_prefix = get_path_prefix()
+
+    def gui_links() -> None:
+        links: List[str] = []
+        for ipaddr in socket.gethostbyname_ex(socket.gethostname())[2]:
+            links.append(f"http://{ipaddr}:{PORT}/{path_prefix}/")
+        guiwindow.queue.put(gui.LinkUpdateEvent(links))
 
     server.on_connect.add(gui_session_add)
     server.on_disconnect.add(gui_session_del)
+    guiwindow.on_link_refresh_button_click.add(gui_links)
+    gui_links()
 
-    gui.on_close.add(server_close_threadsafe)
-    await server.run(HOST, PORT, get_path_prefix())
+    guiwindow.on_close.add(server_close_threadsafe)
+    await server.run(HOST, PORT, path_prefix)
 
 
-def server_thread_func(gui: GUI) -> None:
+def server_thread_func(guiwindow: GUI) -> None:
     try:
-        asyncio.run(server_main(gui))
+        asyncio.run(server_main(guiwindow))
     except Exception:
         log.error(traceback.format_exc())
-        gui.queue.put(GUIErrorEvent())
-        gui.queue.shutdown()
+        guiwindow.queue.put(gui.ErrorEvent())
+        guiwindow.queue.shutdown()
 
 
 def main() -> None:
-    gui = GUI()
+    guiwindow = GUI()
     server_thread = threading.Thread(
-        target=server_thread_func, args=(gui,), daemon=True
+        target=server_thread_func, args=(guiwindow,), daemon=True
     )
     server_thread.start()
-    gui.mainloop()
+    guiwindow.mainloop()
     server_thread.join()

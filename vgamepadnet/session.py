@@ -95,11 +95,11 @@ class Session:
     async def run(self) -> None:
         if self.gamepad is None:
             return
-        self.gamepad.register_notification(self.on_gamepad_status)
+        self.gamepad.register_notification(self.handle_gamepad_status)
         async for msg in self.ws:
             if msg.type == WSMsgType.TEXT:
                 try:
-                    await self.on_message(msg.data)
+                    await self.handle_message(msg.data)
                 except Exception:
                     log.error(traceback.format_exc())
             elif msg.type == WSMsgType.ERROR:
@@ -110,14 +110,14 @@ class Session:
                 log.info(f"ws connection closed with code {msg.data}")
                 self.disconnected = True
                 break
-        await self.on_close()
+        await self.cleanup()
 
     def reply_threadsafe(self, msg: str) -> None:
         if not self.disconnected:
             coro = self.ws.send_str(msg)
             asyncio.run_coroutine_threadsafe(coro, self.main_loop)
 
-    def on_gamepad_status(  # type: ignore
+    def handle_gamepad_status(  # type: ignore
         self, client, target, large_motor, small_motor, led_number, user_data
     ):
         large_motor_v = large_motor / 255
@@ -134,7 +134,7 @@ class Session:
                 f" led_number {led_number}"
             )
 
-    async def on_message(self, cmd: str) -> None:
+    async def handle_message(self, cmd: str) -> None:
         if self.gamepad is None:
             return
         log.debug(f"> {cmd}")
@@ -239,7 +239,7 @@ class Session:
         if self.ws is not None and not self.ws.closed:
             await self.ws.close(code=WSCloseCode.GOING_AWAY, message=b"Server closed")
 
-    async def on_close(self) -> None:
+    async def cleanup(self) -> None:
         """
         移除虚拟手柄
         """
