@@ -6,7 +6,6 @@ import math
 from dataclasses import dataclass
 from typing import Callable, Dict, Set, Union, DefaultDict, List
 from copy import deepcopy
-import textwrap
 
 from .session import Session
 
@@ -21,6 +20,9 @@ button_symbol_xbox = {
     "back": "❐",
     "guide": "⭙",
     "gyro": "G",
+    "large_motor": "SS",
+    "small_motor": "S",
+    "led_number": "L",
 }
 
 
@@ -33,6 +35,9 @@ button_symbol_ds4 = {
     "back": "SH",
     "guide": "PS",
     "gyro": "G",
+    "large_motor": "SS",
+    "small_motor": "S",
+    "led_number": "L",
 }
 
 
@@ -185,8 +190,11 @@ class GUI:
         self.signnames = (
             "LT LB LS left down up right back guide start X Y A B RS RB RT".split(" ")
         )
+        self.signnames_out = "large_motor small_motor led_number".split(" ")
         self.sign = tkinter.Canvas(
-            session_id_frame, width=30 * len(self.signnames), height=30
+            session_id_frame,
+            width=30 * (len(self.signnames) + len(self.signnames_out)),
+            height=30,
         )
         self.sign.pack(side="left")
         self.session_named[session_id] = session_id_frame
@@ -196,11 +204,7 @@ class GUI:
             return
         label = self.session_named[session_id]
         assert isinstance(label, tkinter.Frame)
-        # sign = button_symbol_xbox["guide"] if state.xbox_mode else button_symbol_ds4["guide"]
         self.sign.delete("all")
-        # sign.create_oval(2, 2, 30, 30, fill="white", outline="black", width=2)
-        # sign.create_text(16, 16, text="?", font=("Fira Mono", 12), justify="center")
-        # sign.create_arc(10, 10, 30, 30, start=0, extent=90, fill="green", outline="black", width=2)
         px = 0
         for name in self.signnames:
             if state.xbox_mode:
@@ -281,7 +285,48 @@ class GUI:
                     fill=txfill,
                     justify="center",
                 )
-
+            px += 30
+        for name in self.signnames_out:
+            if state.xbox_mode:
+                tlabel = button_symbol_xbox.get(name, name)
+            else:
+                tlabel = button_symbol_ds4.get(name, name)
+            value = state.state_out[name]
+            down = value != 0
+            bgfill = "lightgreen" if down else "white"
+            txfill = "black" if down else "grey"
+            self.sign.create_oval(
+                px + 2, 2, px + 30, 30, fill="white", outline="grey", width=2
+            )
+            sv = 2 * value - 1
+            if sv < -1:
+                sv = -1
+            if sv > 1:
+                sv = 1
+            angle = math.asin(sv)
+            angle = angle * 180 / math.pi + 90
+            if angle >= 180:
+                angle = 179.9
+            self.sign.create_arc(
+                px + 2,
+                2,
+                px + 30,
+                30,
+                start=270 - angle,
+                extent=2 * angle,
+                style="chord",
+                fill=bgfill,
+                outline=txfill,
+                width=2,
+            )
+            self.sign.create_text(
+                px + 16,
+                16,
+                text=tlabel,
+                font=("Fira Mono", 12),
+                fill=txfill,
+                justify="center",
+            )
             px += 30
 
         # label.configure(

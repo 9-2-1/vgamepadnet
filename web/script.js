@@ -414,6 +414,9 @@ function wsConnect() {
         if (typeof msg == "string") {
             var args = msg.split(" ");
             if (args[0] == "set") {
+                for (var i = 1; i + 1 < args.length; i++) {
+                    state_out[args[i]] = Number(args[i + 1]);
+                }
                 var large_motor = (_a = state_out["large_motor"]) !== null && _a !== void 0 ? _a : 0;
                 var small_motor = (_b = state_out["small_motor"]) !== null && _b !== void 0 ? _b : 0;
                 var vibratePower_1 = Math.max(large_motor, small_motor);

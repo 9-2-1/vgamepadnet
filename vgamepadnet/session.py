@@ -130,6 +130,9 @@ class Session:
             self.state_out["large_motor"] = large_motor_v
             self.state_out["small_motor"] = small_motor_v
             self.state_out["led_number"] = led_number
+            log.debug(
+                f"large: {large_motor_v}, small: {small_motor_v}, led: {led_number}"
+            )
             self.reply_threadsafe(
                 f"set large_motor {large_motor_v}"
                 f" small_motor {small_motor_v}"
