@@ -23,7 +23,7 @@ class Server:
         self.main_loop = asyncio.get_running_loop()
 
         self.clients: Set[Session] = set()
-        self.session_id_next = 0
+        self.session_id_used: Set[int] = set()
 
         self.on_connect: Set[Callable[[Server, Session], Awaitable[None]]] = set()
         self.on_disconnect: Set[Callable[[Server, Session], Awaitable[None]]] = set()
@@ -47,8 +47,11 @@ class Server:
     ) -> Union[web.WebSocketResponse, web.Response]:
         ws = web.WebSocketResponse(heartbeat=2)
         await ws.prepare(request)
-        session = Session(self.session_id_next, ws)
-        self.session_id_next += 1
+        session_id_next = 1
+        while session_id_next in self.session_id_used:
+            session_id_next += 1
+        self.session_id_used.add(session_id_next)
+        session = Session(session_id_next, ws)
         self.clients.add(session)
         for cb in self.on_connect:
             await cb(self, session)
@@ -56,6 +59,7 @@ class Server:
         for cb in self.on_disconnect:
             await cb(self, session)
         self.clients.remove(session)
+        self.session_id_used.remove(session_id_next)
         return ws
 
     async def run(self, host: str, port: int, path_prefix: str) -> None:

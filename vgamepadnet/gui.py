@@ -2,6 +2,7 @@ import logging
 import tkinter
 import tkinter.messagebox
 import queue
+import math
 from dataclasses import dataclass
 from typing import Callable, Dict, Set, Union, DefaultDict, List
 from copy import deepcopy
@@ -19,6 +20,7 @@ button_symbol_xbox = {
     "start": "☰",
     "back": "❐",
     "guide": "⭙",
+    "gyro": "G",
 }
 
 
@@ -27,9 +29,10 @@ button_symbol_ds4 = {
     "down": "↓",
     "left": "←",
     "right": "→",
-    "start": "☰",
-    "back": "❐",
+    "start": "OP",
+    "back": "SH",
     "guide": "PS",
+    "gyro": "G",
 }
 
 
@@ -167,27 +170,127 @@ class GUI:
     def session_add(self, session_id: int) -> None:
         if self.closed:
             return
-        session_id_label = tkinter.Label(
-            self.sessions, text=f"{session_id}", font=("Fira Mono", 12), justify="left"
+        session_id_frame = tkinter.Frame(self.sessions)
+        session_id_frame.pack()
+        session_id_tag = tkinter.Label(
+            session_id_frame,
+            text=f"{session_id}",
+            font=("Fira Mono", 12),
+            justify="left",
+            width=3,
         )
-        session_id_label.pack()
-        self.session_named[session_id] = session_id_label
+        session_id_tag.pack(side="left")
+
+        # todo
+        self.signnames = (
+            "LT LB LS left down up right back guide start X Y A B RS RB RT".split(" ")
+        )
+        self.sign = tkinter.Canvas(
+            session_id_frame, width=30 * len(self.signnames), height=30
+        )
+        self.sign.pack(side="left")
+        self.session_named[session_id] = session_id_frame
 
     def session_change(self, session_id: int, state: SessionState) -> None:
         if self.closed:
             return
         label = self.session_named[session_id]
-        assert isinstance(label, tkinter.Label)
-        sign = button_symbol_xbox["guide"] if state.xbox_mode else button_symbol_ds4["guide"]
-        #
-        'LT LB LS left down up right back guide option x y a b RS RB RT gyro'
-        label.configure(
-            text="\n".join(
-                textwrap.wrap(
-                    f"{session_id} {sign} {state.state} {state.state_out}", 70
+        assert isinstance(label, tkinter.Frame)
+        # sign = button_symbol_xbox["guide"] if state.xbox_mode else button_symbol_ds4["guide"]
+        self.sign.delete("all")
+        # sign.create_oval(2, 2, 30, 30, fill="white", outline="black", width=2)
+        # sign.create_text(16, 16, text="?", font=("Fira Mono", 12), justify="center")
+        # sign.create_arc(10, 10, 30, 30, start=0, extent=90, fill="green", outline="black", width=2)
+        px = 0
+        for name in self.signnames:
+            if state.xbox_mode:
+                tlabel = button_symbol_xbox.get(name, name)
+            else:
+                tlabel = button_symbol_ds4.get(name, name)
+            value = state.state[name]
+            down = value != 0
+            bgfill = "lightgreen" if down else "white"
+            txfill = "black" if down else "grey"
+            if name in {"LS", "RS"}:
+                # directional
+                x = state.state[name + "x"]
+                y = state.state[name + "y"]
+                self.sign.create_oval(
+                    px + 2, 2, px + 30, 30, fill=bgfill, outline=txfill, width=2
                 )
-            )
-        )
+                self.sign.create_oval(
+                    px + (x * 8) + 10,
+                    (y * -8) + 10,
+                    px + (x * 8) + 22,
+                    (y * -8) + 22,
+                    fill=bgfill,
+                    outline=txfill,
+                    width=2,
+                )
+                self.sign.create_text(
+                    px + 16,
+                    16,
+                    text=name,
+                    font=("Fira Mono", 12),
+                    fill=txfill,
+                    justify="center",
+                )
+            elif name in {"LT", "RT"}:
+                # trigger
+                self.sign.create_oval(
+                    px + 2, 2, px + 30, 30, fill="white", outline="grey", width=2
+                )
+                sv = 2 * value - 1
+                if sv < -1:
+                    sv = -1
+                if sv > 1:
+                    sv = 1
+                angle = math.asin(sv)
+                angle = angle * 180 / math.pi + 90
+                if angle >= 180:
+                    angle = 179.9
+                self.sign.create_arc(
+                    px + 2,
+                    2,
+                    px + 30,
+                    30,
+                    start=270 - angle,
+                    extent=2 * angle,
+                    style="chord",
+                    fill=bgfill,
+                    outline=txfill,
+                    width=2,
+                )
+                self.sign.create_text(
+                    px + 16,
+                    16,
+                    text=tlabel,
+                    font=("Fira Mono", 12),
+                    fill=txfill,
+                    justify="center",
+                )
+            else:
+                self.sign.create_oval(
+                    px + 2, 2, px + 30, 30, fill=bgfill, outline=txfill, width=2
+                )
+                self.sign.create_text(
+                    px + 16,
+                    16,
+                    text=tlabel,
+                    font=("Fira Mono", 12),
+                    fill=txfill,
+                    justify="center",
+                )
+
+            px += 30
+
+        # label.configure(
+        #     text="\n".join(
+        #         textwrap.wrap(
+        #             f"{session_id} {sign} {state.state} {state.state_out}", 70
+        #         )
+        #     )
+        # )
 
     def session_del(self, session_id: int) -> None:
         if self.closed:

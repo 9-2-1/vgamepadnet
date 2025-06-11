@@ -93,6 +93,8 @@ class Session:
         )  # 手柄数据变化时调用
 
     async def run(self) -> None:
+        await self.ws.send_str(f"set session_id {self.session_id}")
+        self.state_out["session_id"] = self.session_id
         if self.gamepad is None:
             return
         self.gamepad.register_notification(self.handle_gamepad_status)
