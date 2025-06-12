@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import traceback
 from pathlib import Path
 from typing import Awaitable, Union, Optional, Callable, Set
 
@@ -54,10 +55,16 @@ class Server:
         session = Session(session_id_next, ws)
         self.clients.add(session)
         for cb in self.on_connect:
-            await cb(self, session)
+            try:
+                await cb(self, session)
+            except Exception:
+                log.error(traceback.format_exc())
         await session.run()
         for cb in self.on_disconnect:
-            await cb(self, session)
+            try:
+                await cb(self, session)
+            except Exception:
+                log.error(traceback.format_exc())
         self.clients.remove(session)
         self.session_id_used.remove(session_id_next)
         return ws

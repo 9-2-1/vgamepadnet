@@ -3,6 +3,7 @@ import tkinter
 import tkinter.messagebox
 import queue
 import math
+import traceback
 from dataclasses import dataclass
 from typing import Callable, Dict, Set, Union, DefaultDict, List
 from copy import deepcopy
@@ -127,7 +128,10 @@ class GUI:
 
     def on_link_refresh_button_click_(self) -> None:
         for cb in self.on_link_refresh_button_click:
-            cb()
+            try:
+                cb()
+            except Exception:
+                log.error(traceback.format_exc())
 
     def mainloop(self) -> None:
         self.root.mainloop()
@@ -151,7 +155,10 @@ class GUI:
         if self.closed:
             return
         for cb in self.on_close:
-            cb()
+            try:
+                cb()
+            except Exception:
+                log.error(traceback.format_exc())
         self.root.destroy()
         self.closed = True
 
@@ -167,10 +174,13 @@ class GUI:
                     self.session_del(event.session_id)
                 elif isinstance(event, LinkUpdateEvent):
                     self.link_update(event.links)
+                elif isinstance(event, ErrorEvent):
+                    tkinter.messagebox.showerror(
+                        "错误", "发生错误，请查看debug.log获取详细信息"
+                    )
+                    self.close()
         except queue.Empty:
             self.root.after(CYCLE_MS, self.cycle_queue)
-        except queue.ShutDown:
-            self.close()
 
     def session_add(self, session_id: int) -> None:
         if self.closed:
@@ -328,14 +338,6 @@ class GUI:
                 justify="center",
             )
             px += 30
-
-        # label.configure(
-        #     text="\n".join(
-        #         textwrap.wrap(
-        #             f"{session_id} {sign} {state.state} {state.state_out}", 70
-        #         )
-        #     )
-        # )
 
     def session_del(self, session_id: int) -> None:
         if self.closed:

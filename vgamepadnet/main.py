@@ -12,6 +12,9 @@ from .server import Server
 from . import gui
 from .gui import GUI
 
+import tracemalloc
+
+tracemalloc.start()
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
 
@@ -70,7 +73,11 @@ async def server_main(guiwindow: GUI) -> None:
     gui_links()
 
     guiwindow.on_close.add(server_close_threadsafe)
-    await server.run(HOST, PORT, path_prefix)
+    try:
+        await server.run(HOST, PORT, path_prefix)
+    finally:
+        guiwindow.on_close.remove(server_close_threadsafe)
+        guiwindow.on_link_refresh_button_click.remove(gui_links)
 
 
 def server_thread_func(guiwindow: GUI) -> None:
@@ -79,14 +86,16 @@ def server_thread_func(guiwindow: GUI) -> None:
     except Exception:
         log.error(traceback.format_exc())
         guiwindow.queue.put(gui.ErrorEvent())
-        guiwindow.queue.shutdown()
 
 
 def main() -> None:
-    guiwindow = GUI()
-    server_thread = threading.Thread(
-        target=server_thread_func, args=(guiwindow,), daemon=True
-    )
-    server_thread.start()
-    guiwindow.mainloop()
-    server_thread.join()
+    try:
+        guiwindow = GUI()
+        server_thread = threading.Thread(
+            target=server_thread_func, args=(guiwindow,), daemon=True
+        )
+        server_thread.start()
+        guiwindow.mainloop()
+        server_thread.join()
+    except Exception:
+        log.error(traceback.format_exc())

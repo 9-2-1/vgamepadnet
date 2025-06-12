@@ -10,7 +10,7 @@ import vgamepad  # type: ignore
 log = logging.getLogger(__name__)
 
 
-XBOX_MODE = False
+XBOX_MODE = True
 
 
 button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {
@@ -174,7 +174,10 @@ class Session:
             else:
                 raise ValueError(f"Unknown command {args[0]!r}")
             for cb in self.on_change:
-                await cb(self)
+                try:
+                    await cb(self)
+                except Exception:
+                    log.error(traceback.format_exc())
         except Exception:
             log.error(traceback.format_exc())
 
