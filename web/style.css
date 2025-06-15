@@ -39,6 +39,7 @@ body {
   border: 1px solid #00000088;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden;
+  white-space: pre-wrap;
 }
 
 .button-stick {

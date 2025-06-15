@@ -74,6 +74,22 @@ const buttonDefTable: ButtonDefTable = {
   edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
 };
 
+const ds4Labels: Record<string, string> = {
+  LB: "L1",
+  RB: "R1",
+  LT: "L2",
+  RT: "R2",
+  LS: "L3",
+  RS: "R3",
+  A: "✕",
+  B: "○",
+  X: "□",
+  Y: "△",
+  back: "…",
+  start: "☰",
+  guide: "PS",
+};
+
 class Vibration {
   oldViberatePower = 0;
   oldViberateCount = 0;
@@ -82,8 +98,8 @@ class Vibration {
   interval: number | null = null;
   vibration() {
     const a: Array<number> = [];
-    if (this.peakVibratePower == this.oldViberatePower) {
-      if (this.peakVibratePower == 0) {
+    if (this.peakVibratePower === this.oldViberatePower) {
+      if (this.peakVibratePower === 0) {
         this.peakVibratePower = this.vibratePower;
         return;
       }
@@ -124,20 +140,85 @@ class Vibration {
         }
       }
     }
-    // log(`peak: ${peakVibratePower} a: ${a}`);
+    // console.log(`peak: ${this.vibratePower} a: ${a}`);
     navigator.vibrate?.(a);
     this.oldViberatePower = this.peakVibratePower;
     this.oldViberateCount = 0;
+    this.peakVibratePower = this.vibratePower;
   }
   start() {
     if (this.interval === null) {
-      this.interval = setInterval(this.vibration, 10);
+      this.interval = setInterval(this.vibration.bind(this), 10);
     }
   }
   stop() {
     if (this.interval !== null) {
       clearInterval(this.interval);
       this.interval = null;
+    }
+  }
+}
+
+class Latency {
+  gamepad: VGamepad;
+  latency: number | null;
+  waitms: number;
+  callback: (() => void) | null;
+  running: boolean;
+  timeout: number | null;
+  constructor(gamepad: VGamepad, waitms: number = 1000) {
+    this.gamepad = gamepad;
+    this.latency = null;
+    this.waitms = waitms;
+    this.callback = null;
+    this.running = false;
+    this.timeout = null;
+  }
+  start() {
+    this.running = true;
+    this.timeout = setTimeout(this.ping.bind(this), this.waitms);
+  }
+  stop() {
+    this.running = false;
+    if (this.timeout !== null) {
+      clearTimeout(this.timeout);
+      this.timeout = null;
+    }
+  }
+  ping() {
+    if (this.gamepad.websocket === null) {
+      this.latency = null;
+      this.gamepad.updateButtons();
+    } else {
+      this.gamepad.websocket.send("ping");
+      const start = new Date().getTime();
+      new Promise<void>((resolve, reject) => {
+        this.callback = () => {
+          resolve();
+        };
+        this.timeout = setTimeout(reject, this.waitms);
+      })
+        .then((value) => {
+          this.callback = null;
+          const stop = new Date().getTime();
+          this.latency = stop - start;
+          this.gamepad.updateButtons();
+          if (this.timeout !== null) {
+            clearTimeout(this.timeout);
+          }
+          this.timeout = setTimeout(this.ping.bind(this), this.waitms);
+        })
+        .catch(() => {
+          this.callback = null;
+          this.latency = null;
+          this.gamepad.updateButtons();
+          this.timeout = setTimeout(this.ping.bind(this), this.waitms);
+        });
+    }
+  }
+  onPong() {
+    if (this.callback !== null) {
+      this.callback();
     }
   }
 }
@@ -253,11 +334,12 @@ class VGamepad {
   serverLink: string;
   websocket: WebSocket | null;
   websocketOpening: boolean;
+  latency: Latency;
   vibration: Vibration;
   constructor(parent: HTMLElement, serverLink: string) {
     this.state = {};
     this.state_out = {};
-    this.mode = "ds4";
+    this.mode = "xbox";
     this.editMode = false;
     this.element = document.createElement("div");
     this.element.classList.add("gamepad");
@@ -266,8 +348,11 @@ class VGamepad {
     this.websocket = null;
     this.websocketOpening = false;
     parent.appendChild(this.element);
+    this.latency = new Latency(this);
     this.vibration = new Vibration();
     this.connect();
+    this.latency.start();
+    this.vibration.start();
   }
   updateButtons() {
     for (const btn of Object.values(this.buttons)) {
@@ -276,7 +361,7 @@ class VGamepad {
     }
     const status = this.buttons.status?.element;
     if (status !== undefined) {
-      status.textContent = String(this.state_out.led_number ?? 0);
+      status.textContent = `id:${this.state_out.session_id ?? 0}\n${this.latency.latency}ms\nvib:${Math.floor(this.vibration.peakVibratePower * 100)}`;
     }
   }
   setEditMode(editMode: boolean) {
@@ -325,7 +410,6 @@ class VGamepad {
       this.websocketOpening = false;
       this.wsClose();
       // retry
-      console.log("close resche");
       setTimeout(() => {
         this.connect();
       }, 1000);
@@ -337,6 +421,11 @@ class VGamepad {
       return;
     }
     this.websocket.send(`mode ${this.mode}`);
+    let init_str = "set";
+    for (const [name, value] of Object.entries(this.state)) {
+      init_str += ` ${name} ${value}`;
+    }
+    this.websocket.send(init_str);
   }
   wsMessage(msg: string) {
     const args = msg.split(" ");
@@ -353,6 +442,8 @@ class VGamepad {
           this.updateButtons();
         }
       }
+    } else if (args[0] === "pong") {
+      this.latency.onPong();
     }
   }
   wsClose() {}
@@ -636,7 +727,11 @@ class VGamepadButton {
     this.element.style.top = `${this.realPos.y + this.realPos.offsetY}px`;
     this.element.style.width = `${this.realPos.width}px`;
     this.element.style.height = `${this.realPos.height}px`;
-    this.element.style.fontSize = `${this.realPos.height * 0.5}px`;
+    if (this.mode.mode == "status") {
+      this.element.style.fontSize = `${this.realPos.height * 0.2}px`;
+    } else {
+      this.element.style.fontSize = `${this.realPos.height * 0.5}px`;
+    }
     if (!this.pos.show) {
       this.element.classList.add("button-hide");
     } else {
@@ -655,6 +750,7 @@ class VGamepadButton {
     }
   }
 }
+
 const defaultPosTable: ButtonPosTable = {
   LB: { x: 10.448151034313028, y: 26.967594358656143, scale: 20, show: true },
   RB: { x: 89.75288216002276, y: 20.48611111111111, scale: 20, show: true },
@@ -715,6 +811,7 @@ const defaultPosTable: ButtonPosTable = {
   settings: { x: 100, y: 0, scale: 20, show: true },
   edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
 };
+
 function initGamepad() {
   const wsprotocol = document.location.protocol === "https:" ? "wss" : "ws";
   const PATH = document.location.host + document.location.pathname;
@@ -746,10 +843,16 @@ function initGamepad() {
     };
   }
   for (const [symbol, def] of Object.entries(buttonDefTable)) {
+    let def2 = def;
+    if (vgamepad.mode == "ds4") {
+      def2 = Object.assign({}, def, {
+        label: ds4Labels[symbol] ?? def.label,
+      });
+    }
     const button = new VGamepadButton(
       vgamepad,
       symbol,
-      def,
+      def2,
       posTable[symbol] ?? defaultPos,
     );
     vgamepad.buttons[symbol] = button;

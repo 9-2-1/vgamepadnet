@@ -187,6 +187,8 @@ class GUI:
                     toChange[event.session_id] = event.state
                 elif isinstance(event, SessionDelEvent):
                     toAdd.discard(event.session_id)
+                    if event.session_id in toChange:
+                        toChange.pop(event.session_id)
                     toDel.add(event.session_id)
                 elif isinstance(event, LinkUpdateEvent):
                     self.link_update(event.links)
@@ -220,17 +222,17 @@ class GUI:
         )
         session_id_tag.pack(side="left")
 
-        # todo
         self.signnames = (
             "LT LB LS left down up right back guide start X Y A B RS RB RT".split(" ")
         )
         self.signnames_out = "large_motor small_motor led_number".split(" ")
-        self.sign = tkinter.Canvas(
+        sign = tkinter.Canvas(
             session_id_frame,
             width=30 * (len(self.signnames) + len(self.signnames_out)),
             height=30,
+            name="sign",
         )
-        self.sign.pack(side="left")
+        sign.pack(side="left")
         self.session_named[session_id] = session_id_frame
 
     def session_change(self, session_id: int, state: SessionState) -> None:
@@ -238,7 +240,9 @@ class GUI:
             return
         label = self.session_named[session_id]
         assert isinstance(label, tkinter.Frame)
-        self.sign.delete("all")
+        sign = label.children["sign"]
+        assert isinstance(sign, tkinter.Canvas)
+        sign.delete("all")
         if state.gamepad_mode == GamepadMode.NONE:
             return
         px = 0
@@ -257,10 +261,10 @@ class GUI:
                 # directional
                 x = state.state[name + "x"]
                 y = state.state[name + "y"]
-                self.sign.create_oval(
+                sign.create_oval(
                     px + 2, 2, px + 30, 30, fill=bgfill, outline=txfill, width=2
                 )
-                self.sign.create_oval(
+                sign.create_oval(
                     px + (x * 8) + 10,
                     (y * -8) + 10,
                     px + (x * 8) + 22,
@@ -269,7 +273,7 @@ class GUI:
                     outline=txfill,
                     width=2,
                 )
-                self.sign.create_text(
+                sign.create_text(
                     px + 16,
                     16,
                     text=name,
@@ -279,7 +283,7 @@ class GUI:
                 )
             elif name in {"LT", "RT"}:
                 # trigger
-                self.sign.create_oval(
+                sign.create_oval(
                     px + 2, 2, px + 30, 30, fill="white", outline="grey", width=2
                 )
                 sv = 2 * value - 1
@@ -291,7 +295,7 @@ class GUI:
                 angle = angle * 180 / math.pi + 90
                 if angle >= 180:
                     angle = 179.9
-                self.sign.create_arc(
+                sign.create_arc(
                     px + 2,
                     2,
                     px + 30,
@@ -303,7 +307,7 @@ class GUI:
                     outline=txfill,
                     width=2,
                 )
-                self.sign.create_text(
+                sign.create_text(
                     px + 16,
                     16,
                     text=tlabel,
@@ -312,10 +316,10 @@ class GUI:
                     justify="center",
                 )
             else:
-                self.sign.create_oval(
+                sign.create_oval(
                     px + 2, 2, px + 30, 30, fill=bgfill, outline=txfill, width=2
                 )
-                self.sign.create_text(
+                sign.create_text(
                     px + 16,
                     16,
                     text=tlabel,
@@ -335,11 +339,11 @@ class GUI:
             down = value != 0
             bgfill = "lightgreen" if down else "white"
             txfill = "black" if down else "grey"
-            self.sign.create_oval(
+            sign.create_oval(
                 px + 2, 2, px + 30, 30, fill="white", outline="grey", width=2
             )
             if name == "led_number":
-                sv = 2 * (value / 4) - 1
+                sv = 2 * (value / 255) - 1
             else:
                 sv = 2 * value - 1
             if sv < -1:
@@ -350,7 +354,7 @@ class GUI:
             angle = angle * 180 / math.pi + 90
             if angle >= 180:
                 angle = 179.9
-            self.sign.create_arc(
+            sign.create_arc(
                 px + 2,
                 2,
                 px + 30,
@@ -362,7 +366,7 @@ class GUI:
                 outline=txfill,
                 width=2,
             )
-            self.sign.create_text(
+            sign.create_text(
                 px + 16,
                 16,
                 text=tlabel,
@@ -375,4 +379,5 @@ class GUI:
     def session_del(self, session_id: int) -> None:
         if self.closed:
             return
+        self.session_named[session_id].pack_forget()
         self.session_named[session_id].destroy()

@@ -42,6 +42,21 @@ var buttonDefTable = {
     settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
     edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
 };
+var ds4Labels = {
+    LB: "L1",
+    RB: "R1",
+    LT: "L2",
+    RT: "R2",
+    LS: "L3",
+    RS: "R3",
+    A: "✕",
+    B: "○",
+    X: "□",
+    Y: "△",
+    back: "…",
+    start: "☰",
+    guide: "PS",
+};
 var Vibration = /** @class */ (function () {
     function Vibration() {
         this.oldViberatePower = 0;
@@ -53,8 +68,8 @@ var Vibration = /** @class */ (function () {
     Vibration.prototype.vibration = function () {
         var _a;
         var a = [];
-        if (this.peakVibratePower == this.oldViberatePower) {
-            if (this.peakVibratePower == 0) {
+        if (this.peakVibratePower === this.oldViberatePower) {
+            if (this.peakVibratePower === 0) {
                 this.peakVibratePower = this.vibratePower;
                 return;
             }
@@ -94,14 +109,15 @@ var Vibration = /** @class */ (function () {
                 }
             }
         }
-        // log(`peak: ${peakVibratePower} a: ${a}`);
+        // console.log(`peak: ${this.vibratePower} a: ${a}`);
         (_a = navigator.vibrate) === null || _a === void 0 ? void 0 : _a.call(navigator, a);
         this.oldViberatePower = this.peakVibratePower;
         this.oldViberateCount = 0;
+        this.peakVibratePower = this.vibratePower;
     };
     Vibration.prototype.start = function () {
         if (this.interval === null) {
-            this.interval = setInterval(this.vibration, 10);
+            this.interval = setInterval(this.vibration.bind(this), 10);
         }
     };
     Vibration.prototype.stop = function () {
@@ -111,6 +127,67 @@ var Vibration = /** @class */ (function () {
         }
     };
     return Vibration;
+}());
+var Latency = /** @class */ (function () {
+    function Latency(gamepad, waitms) {
+        if (waitms === void 0) { waitms = 1000; }
+        this.gamepad = gamepad;
+        this.latency = null;
+        this.waitms = waitms;
+        this.callback = null;
+        this.running = false;
+        this.timeout = null;
+    }
+    Latency.prototype.start = function () {
+        this.running = true;
+        this.timeout = setTimeout(this.ping.bind(this), this.waitms);
+    };
+    Latency.prototype.stop = function () {
+        this.running = false;
+        if (this.timeout !== null) {
+            clearTimeout(this.timeout);
+            this.timeout = null;
+        }
+    };
+    Latency.prototype.ping = function () {
+        var _this = this;
+        if (this.gamepad.websocket === null) {
+            this.latency = null;
+            this.gamepad.updateButtons();
+        }
+        else {
+            this.gamepad.websocket.send("ping");
+            var start_1 = new Date().getTime();
+            new Promise(function (resolve, reject) {
+                _this.callback = function () {
+                    resolve();
+                };
+                _this.timeout = setTimeout(reject, _this.waitms);
+            })
+                .then(function (value) {
+                _this.callback = null;
+                var stop = new Date().getTime();
+                _this.latency = stop - start_1;
+                _this.gamepad.updateButtons();
+                if (_this.timeout !== null) {
+                    clearTimeout(_this.timeout);
+                }
+                _this.timeout = setTimeout(_this.ping.bind(_this), _this.waitms);
+            })
+                .catch(function () {
+                _this.callback = null;
+                _this.latency = null;
+                _this.gamepad.updateButtons();
+                _this.timeout = setTimeout(_this.ping.bind(_this), _this.waitms);
+            });
+        }
+    };
+    Latency.prototype.onPong = function () {
+        if (this.callback !== null) {
+            this.callback();
+        }
+    };
+    return Latency;
 }());
 var nosleep = new NoSleep();
 function toggleFullScreen() {
@@ -216,7 +293,7 @@ var VGamepad = /** @class */ (function () {
     function VGamepad(parent, serverLink) {
         this.state = {};
         this.state_out = {};
-        this.mode = "ds4";
+        this.mode = "xbox";
         this.editMode = false;
         this.element = document.createElement("div");
         this.element.classList.add("gamepad");
@@ -225,8 +302,11 @@ var VGamepad = /** @class */ (function () {
         this.websocket = null;
         this.websocketOpening = false;
         parent.appendChild(this.element);
+        this.latency = new Latency(this);
         this.vibration = new Vibration();
         this.connect();
+        this.latency.start();
+        this.vibration.start();
     }
     VGamepad.prototype.updateButtons = function () {
         var _a, _b;
@@ -237,7 +317,7 @@ var VGamepad = /** @class */ (function () {
         }
         var status = (_a = this.buttons.status) === null || _a === void 0 ? void 0 : _a.element;
         if (status !== undefined) {
-            status.textContent = String((_b = this.state_out.led_number) !== null && _b !== void 0 ? _b : 0);
+            status.textContent = "id:".concat((_b = this.state_out.session_id) !== null && _b !== void 0 ? _b : 0, "\n").concat(this.latency.latency, "ms\nvib:").concat(Math.floor(this.vibration.peakVibratePower * 100));
         }
     };
     VGamepad.prototype.setEditMode = function (editMode) {
@@ -289,7 +369,6 @@ var VGamepad = /** @class */ (function () {
             _this.websocketOpening = false;
             _this.wsClose();
             // retry
-            console.log("close resche");
             setTimeout(function () {
                 _this.connect();
             }, 1000);
@@ -301,6 +380,12 @@ var VGamepad = /** @class */ (function () {
             return;
         }
         this.websocket.send("mode ".concat(this.mode));
+        var init_str = "set";
+        for (var _i = 0, _a = Object.entries(this.state); _i < _a.length; _i++) {
+            var _b = _a[_i], name_1 = _b[0], value = _b[1];
+            init_str += " ".concat(name_1, " ").concat(value);
+        }
+        this.websocket.send(init_str);
     };
     VGamepad.prototype.wsMessage = function (msg) {
         var _a, _b;
@@ -315,6 +400,9 @@ var VGamepad = /** @class */ (function () {
                     this.updateButtons();
                 }
             }
+        }
+        else if (args[0] === "pong") {
+            this.latency.onPong();
         }
     };
     VGamepad.prototype.wsClose = function () { };
@@ -563,7 +651,12 @@ var VGamepadButton = /** @class */ (function () {
         this.element.style.top = "".concat(this.realPos.y + this.realPos.offsetY, "px");
         this.element.style.width = "".concat(this.realPos.width, "px");
         this.element.style.height = "".concat(this.realPos.height, "px");
-        this.element.style.fontSize = "".concat(this.realPos.height * 0.5, "px");
+        if (this.mode.mode == "status") {
+            this.element.style.fontSize = "".concat(this.realPos.height * 0.2, "px");
+        }
+        else {
+            this.element.style.fontSize = "".concat(this.realPos.height * 0.5, "px");
+        }
         if (!this.pos.show) {
             this.element.classList.add("button-hide");
         }
@@ -646,7 +739,7 @@ var defaultPosTable = {
     edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
 };
 function initGamepad() {
-    var _a, _b, _c, _d, _e, _f;
+    var _a, _b, _c, _d, _e, _f, _g;
     var wsprotocol = document.location.protocol === "https:" ? "wss" : "ws";
     var PATH = document.location.host + document.location.pathname;
     var vgamepad = new VGamepad(document.body, "".concat(wsprotocol, "://").concat(PATH, "websocket"));
@@ -664,8 +757,8 @@ function initGamepad() {
             console.error(e);
         }
     }
-    for (var _i = 0, _g = Object.keys(buttonDefTable); _i < _g.length; _i++) {
-        var symbol = _g[_i];
+    for (var _i = 0, _h = Object.keys(buttonDefTable); _i < _h.length; _i++) {
+        var symbol = _h[_i];
         var posTableR = posTableJson === null || posTableJson === void 0 ? void 0 : posTableJson[symbol];
         var defaultP = (_a = defaultPosTable[symbol]) !== null && _a !== void 0 ? _a : defaultPos;
         posTable[symbol] = {
@@ -675,9 +768,15 @@ function initGamepad() {
             show: (_e = posTableR === null || posTableR === void 0 ? void 0 : posTableR.show) !== null && _e !== void 0 ? _e : defaultP.show,
         };
     }
-    for (var _h = 0, _j = Object.entries(buttonDefTable); _h < _j.length; _h++) {
-        var _k = _j[_h], symbol = _k[0], def = _k[1];
-        var button = new VGamepadButton(vgamepad, symbol, def, (_f = posTable[symbol]) !== null && _f !== void 0 ? _f : defaultPos);
+    for (var _j = 0, _k = Object.entries(buttonDefTable); _j < _k.length; _j++) {
+        var _l = _k[_j], symbol = _l[0], def = _l[1];
+        var def2 = def;
+        if (vgamepad.mode == "ds4") {
+            def2 = Object.assign({}, def, {
+                label: (_f = ds4Labels[symbol]) !== null && _f !== void 0 ? _f : def.label,
+            });
+        }
+        var button = new VGamepadButton(vgamepad, symbol, def2, (_g = posTable[symbol]) !== null && _g !== void 0 ? _g : defaultPos);
         vgamepad.buttons[symbol] = button;
     }
     window.addEventListener("resize", function () {
