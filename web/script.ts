@@ -160,20 +160,14 @@ class Vibration {
 }
 
 class Latency {
-  gamepad: VGamepad;
-  latency: number | null;
-  waitms: number;
-  callback: (() => void) | null;
-  running: boolean;
-  timeout: number | null;
-  constructor(gamepad: VGamepad, waitms: number = 1000) {
-    this.gamepad = gamepad;
-    this.latency = null;
-    this.waitms = waitms;
-    this.callback = null;
-    this.running = false;
-    this.timeout = null;
-  }
+  latency: number | null = null;
+  callback: (() => void) | null = null;
+  running = false;
+  timeout: number | null = null;
+  constructor(
+    public gamepad: VGamepad,
+    public waitms: number = 1000,
+  ) {}
   start() {
     this.running = true;
     this.timeout = setTimeout(this.ping.bind(this), this.waitms);
@@ -325,28 +319,22 @@ function addTouchListeners(
 
 type GamepadMode = "xbox" | "ds4";
 class VGamepad {
-  mode: GamepadMode;
-  state: GamepadState;
-  state_out: GamepadState;
-  editMode: boolean;
+  mode: GamepadMode = "xbox";
+  state: GamepadState = {};
+  state_out: GamepadState = {};
+  editMode = false;
   element: HTMLDivElement;
-  buttons: Record<string, VGamepadButton>;
-  serverLink: string;
-  websocket: WebSocket | null;
-  websocketOpening: boolean;
+  buttons: Record<string, VGamepadButton> = {};
+  websocket: WebSocket | null = null;
+  websocketOpening = false;
   latency: Latency;
   vibration: Vibration;
-  constructor(parent: HTMLElement, serverLink: string) {
-    this.state = {};
-    this.state_out = {};
-    this.mode = "xbox";
-    this.editMode = false;
+  constructor(
+    parent: HTMLElement,
+    public serverLink: string,
+  ) {
     this.element = document.createElement("div");
     this.element.classList.add("gamepad");
-    this.buttons = {};
-    this.serverLink = serverLink;
-    this.websocket = null;
-    this.websocketOpening = false;
     parent.appendChild(this.element);
     this.latency = new Latency(this);
     this.vibration = new Vibration();
@@ -449,53 +437,27 @@ class VGamepad {
   wsClose() {}
 }
 class VGamepadButton {
-  gamepad: VGamepad;
-  symbol: string;
-  def: ButtonDef;
-  pos: ButtonPos;
-  realPos: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    offsetX: number;
-    offsetY: number;
-  };
+  realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
   mode: ButtonMode;
-  editMode: {
-    offsetX: number;
-    offsetY: number;
-    previousTime: number;
-    previousX: number;
-    previousY: number;
-    moved: boolean;
+  editMode = {
+    offsetX: 0,
+    offsetY: 0,
+    previousTime: 0,
+    previousX: 0,
+    previousY: 0,
+    moved: false,
   };
-  stickDrag: { offsetX: number; offsetY: number };
-  prevDown: boolean;
+  stickDrag = { offsetX: 0, offsetY: 0 };
+  prevDown = false;
   element: HTMLButtonElement;
-  elementShade: HTMLDivElement | null;
+  elementShade: HTMLDivElement | null = null;
   constructor(
-    gamepad: VGamepad,
-    symbol: string,
-    def: ButtonDef,
-    pos: ButtonPos,
+    public gamepad: VGamepad,
+    public symbol: string,
+    public def: ButtonDef,
+    public pos: ButtonPos, // 相对位置(左边界碰到窗口左边界为0，右边界碰到窗口右边界为100)
   ) {
-    this.gamepad = gamepad;
-    this.symbol = symbol;
-    this.def = def;
-    this.pos = pos; // 相对位置(左边界碰到窗口左边界为0，右边界碰到窗口右边界为100)
-    this.realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
-    this.stickDrag = { offsetX: 0, offsetY: 0 };
     this.mode = def.mode ?? defaultMode(def, symbol);
-    this.editMode = {
-      offsetX: 0,
-      offsetY: 0,
-      previousTime: 0,
-      previousX: 0,
-      previousY: 0,
-      moved: false,
-    };
-    this.prevDown = false;
     this.element = document.createElement("button");
     this.element.textContent = this.def.label;
     this.element.classList.add(
@@ -504,7 +466,6 @@ class VGamepadButton {
       `button-${this.def.shape}`,
     );
     addTouchListeners(this.element, this.touchCallback.bind(this));
-    this.elementShade = null;
     if (this.def.shape == "stick" || this.def.shape == "trigger") {
       this.elementShade = document.createElement("div");
       this.elementShade.classList.add(

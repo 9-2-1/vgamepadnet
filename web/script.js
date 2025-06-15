@@ -132,8 +132,8 @@ var Latency = /** @class */ (function () {
     function Latency(gamepad, waitms) {
         if (waitms === void 0) { waitms = 1000; }
         this.gamepad = gamepad;
-        this.latency = null;
         this.waitms = waitms;
+        this.latency = null;
         this.callback = null;
         this.running = false;
         this.timeout = null;
@@ -291,16 +291,16 @@ function addTouchListeners(button, touchCallback) {
 }
 var VGamepad = /** @class */ (function () {
     function VGamepad(parent, serverLink) {
+        this.serverLink = serverLink;
+        this.mode = "xbox";
         this.state = {};
         this.state_out = {};
-        this.mode = "xbox";
         this.editMode = false;
-        this.element = document.createElement("div");
-        this.element.classList.add("gamepad");
         this.buttons = {};
-        this.serverLink = serverLink;
         this.websocket = null;
         this.websocketOpening = false;
+        this.element = document.createElement("div");
+        this.element.classList.add("gamepad");
         parent.appendChild(this.element);
         this.latency = new Latency(this);
         this.vibration = new Vibration();
@@ -414,10 +414,8 @@ var VGamepadButton = /** @class */ (function () {
         this.gamepad = gamepad;
         this.symbol = symbol;
         this.def = def;
-        this.pos = pos; // 相对位置(左边界碰到窗口左边界为0，右边界碰到窗口右边界为100)
+        this.pos = pos;
         this.realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
-        this.stickDrag = { offsetX: 0, offsetY: 0 };
-        this.mode = (_a = def.mode) !== null && _a !== void 0 ? _a : defaultMode(def, symbol);
         this.editMode = {
             offsetX: 0,
             offsetY: 0,
@@ -426,12 +424,14 @@ var VGamepadButton = /** @class */ (function () {
             previousY: 0,
             moved: false,
         };
+        this.stickDrag = { offsetX: 0, offsetY: 0 };
         this.prevDown = false;
+        this.elementShade = null;
+        this.mode = (_a = def.mode) !== null && _a !== void 0 ? _a : defaultMode(def, symbol);
         this.element = document.createElement("button");
         this.element.textContent = this.def.label;
         this.element.classList.add("button", "button-".concat(this.symbol), "button-".concat(this.def.shape));
         addTouchListeners(this.element, this.touchCallback.bind(this));
-        this.elementShade = null;
         if (this.def.shape == "stick" || this.def.shape == "trigger") {
             this.elementShade = document.createElement("div");
             this.elementShade.classList.add("buttonshade", "buttonshade-".concat(this.symbol), "buttonshade-".concat(this.def.shape));
