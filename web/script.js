@@ -42,14 +42,84 @@ var buttonDefTable = {
     settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
     edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
 };
+var Vibration = /** @class */ (function () {
+    function Vibration() {
+        this.oldViberatePower = 0;
+        this.oldViberateCount = 0;
+        this.vibratePower = 0;
+        this.peakVibratePower = 0;
+        this.interval = null;
+    }
+    Vibration.prototype.vibration = function () {
+        var _a;
+        var a = [];
+        if (this.peakVibratePower == this.oldViberatePower) {
+            if (this.peakVibratePower == 0) {
+                this.peakVibratePower = this.vibratePower;
+                return;
+            }
+            if (this.oldViberateCount < 10) {
+                // 10*30=300ms
+                this.oldViberateCount += 1;
+                this.peakVibratePower = this.vibratePower;
+                return;
+            }
+        }
+        var minunit = 5;
+        var tot = 100;
+        var totOn = 0;
+        var totOff = 0;
+        var fixedPower = 1.0 - (1.0 - this.peakVibratePower) * 0.7;
+        if (fixedPower >= 1) {
+            a.push(tot);
+        }
+        else if (fixedPower <= 0) {
+            // pass
+        }
+        else {
+            while (totOn + totOff < tot) {
+                if (fixedPower > 0.5) {
+                    totOff += minunit;
+                    var on = Math.floor((totOff * fixedPower) / (1 - fixedPower) - totOn + 0.5);
+                    a.push(on);
+                    a.push(minunit);
+                    totOn += on;
+                }
+                else {
+                    totOn += minunit;
+                    var off = Math.floor((totOn * (1 - fixedPower)) / fixedPower - totOff + 0.5);
+                    a.push(minunit);
+                    a.push(off);
+                    totOff += off;
+                }
+            }
+        }
+        // log(`peak: ${peakVibratePower} a: ${a}`);
+        (_a = navigator.vibrate) === null || _a === void 0 ? void 0 : _a.call(navigator, a);
+        this.oldViberatePower = this.peakVibratePower;
+        this.oldViberateCount = 0;
+    };
+    Vibration.prototype.start = function () {
+        if (this.interval === null) {
+            this.interval = setInterval(this.vibration, 10);
+        }
+    };
+    Vibration.prototype.stop = function () {
+        if (this.interval !== null) {
+            clearInterval(this.interval);
+            this.interval = null;
+        }
+    };
+    return Vibration;
+}());
 var nosleep = new NoSleep();
 function toggleFullScreen() {
-    var _a, _b;
+    var _a, _b, _c, _d;
     if (!document.fullscreenElement) {
-        (_a = document.documentElement) === null || _a === void 0 ? void 0 : _a.requestFullscreen();
+        (_b = (_a = document.documentElement).requestFullscreen) === null || _b === void 0 ? void 0 : _b.call(_a);
         try {
             // @ts-ignore
-            (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
+            (_d = (_c = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _c === void 0 ? void 0 : _c.lock) === null || _d === void 0 ? void 0 : _d.call(_c, "landscape");
         }
         catch (e) {
             console.warn(e);
@@ -155,13 +225,19 @@ var VGamepad = /** @class */ (function () {
         this.websocket = null;
         this.websocketOpening = false;
         parent.appendChild(this.element);
+        this.vibration = new Vibration();
         this.connect();
     }
     VGamepad.prototype.updateButtons = function () {
-        for (var _i = 0, _a = Object.values(this.buttons); _i < _a.length; _i++) {
-            var btn = _a[_i];
+        var _a, _b;
+        for (var _i = 0, _c = Object.values(this.buttons); _i < _c.length; _i++) {
+            var btn = _c[_i];
             btn.posToRealPos();
             btn.updateButton();
+        }
+        var status = (_a = this.buttons.status) === null || _a === void 0 ? void 0 : _a.element;
+        if (status !== undefined) {
+            status.textContent = String((_b = this.state_out.led_number) !== null && _b !== void 0 ? _b : 0);
         }
     };
     VGamepad.prototype.setEditMode = function (editMode) {
@@ -227,10 +303,17 @@ var VGamepad = /** @class */ (function () {
         this.websocket.send("mode ".concat(this.mode));
     };
     VGamepad.prototype.wsMessage = function (msg) {
+        var _a, _b;
         var args = msg.split(" ");
         if (args[0] === "set") {
             for (var i = 1; i + 1 < args.length; i += 2) {
                 this.state_out[args[i]] = parseFloat(args[i + 1]);
+                if (args[i] === "large_motor" || args[i] === "small_motor") {
+                    this.vibration.vibratePower = Math.max((_a = this.state_out.large_motor) !== null && _a !== void 0 ? _a : 0, (_b = this.state_out.small_motor) !== null && _b !== void 0 ? _b : 0);
+                }
+                if (args[i] === "led_number") {
+                    this.updateButtons();
+                }
             }
         }
     };
