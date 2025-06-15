@@ -183,6 +183,7 @@ class Latency {
     if (this.gamepad.websocket === null) {
       this.latency = null;
       this.gamepad.updateButtons();
+      this.timeout = setTimeout(this.ping.bind(this), this.waitms);
     } else {
       this.gamepad.websocket.send("ping");
       const start = new Date().getTime();
@@ -206,6 +207,9 @@ class Latency {
           this.callback = null;
           this.latency = null;
           this.gamepad.updateButtons();
+          if (this.timeout !== null) {
+            clearTimeout(this.timeout);
+          }
           this.timeout = setTimeout(this.ping.bind(this), this.waitms);
         });
     }
@@ -329,6 +333,7 @@ class VGamepad {
   websocketOpening = false;
   latency: Latency;
   vibration: Vibration;
+  message = "";
   constructor(
     parent: HTMLElement,
     public serverLink: string,
@@ -349,7 +354,11 @@ class VGamepad {
     }
     const status = this.buttons.status?.element;
     if (status !== undefined) {
-      status.textContent = `id:${this.state_out.session_id ?? 0}\n${this.latency.latency}ms\nvib:${Math.floor(this.vibration.peakVibratePower * 100)}`;
+      status.textContent =
+        `` +
+        `${this.state_out.session_id ?? 0}: ${this.mode}\n` +
+        `${this.latency.latency === null ? "未连接" : this.latency.latency + "ms"}\n` +
+        `${this.message}`;
     }
   }
   setEditMode(editMode: boolean) {
@@ -376,12 +385,20 @@ class VGamepad {
       this.state[name] = value;
     }
   }
+  setMode(mode: GamepadMode) {
+    this.mode = mode;
+    this.wsInit();
+  }
+  setMessage(msg: string) {
+    this.message = msg;
+    this.updateButtons();
+  }
   connect() {
     this.websocket = new WebSocket(this.serverLink);
     this.websocketOpening = true;
     this.websocket.addEventListener("open", () => {
       this.websocketOpening = false;
-      this.wsOpen();
+      this.wsInit();
     });
     this.websocket.addEventListener("message", (ev) => {
       this.wsMessage(ev.data);
@@ -396,14 +413,13 @@ class VGamepad {
       }
       this.websocket = null;
       this.websocketOpening = false;
-      this.wsClose();
       // retry
       setTimeout(() => {
         this.connect();
       }, 1000);
     });
   }
-  wsOpen() {
+  wsInit() {
     if (this.websocket === null || this.websocketOpening) {
       console.error("Websocket not ready");
       return;
@@ -434,7 +450,6 @@ class VGamepad {
       this.latency.onPong();
     }
   }
-  wsClose() {}
 }
 class VGamepadButton {
   realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
@@ -614,37 +629,24 @@ class VGamepadButton {
         }
         break;
       case "macro":
-        // if (this.gamepad.recordState == 'select') {
-        // if (down && !this.prevDown) {
-        //   recordTarget=this.def.mode.id
-        //   record
-        // }
-        // } else if (...recordState == 'none') {
-        //   sendMacro(this.mode.id);
+        this.gamepad.setMessage("宏仍在开发中");
         break;
       case "record":
-        // if (down &&!this.prevDown) {
-        // } else if (...recordState == 'none') {
-        // select
-        // if (this.gamepad.recordState == 'select') {
-        // }
+        this.gamepad.setMessage("宏仍在开发中");
         break;
       case "turbo":
-        // if (down &&!this.prevDown) {
-        //   sendMacro(this.mode.id);
-        //   gamepad.turboMode
-        // }else{
-        // turbomode...
-        //}
+        this.gamepad.setMessage("连发仍在开发中");
         break;
       case "speed":
-        // if (down &&!this.prevDown) {
-        //   sendMacro(this.mode.id);
-        //   gamepad.macroSpeed
-        // }
         break;
       case "status":
-        // No need to interact
+        if (down && !this.prevDown) {
+          if (this.gamepad.mode == "ds4") {
+            this.gamepad.setMode("xbox");
+          } else {
+            this.gamepad.setMode("ds4");
+          }
+        }
         break;
       case "settings":
         if (down && !this.prevDown) {
@@ -684,6 +686,11 @@ class VGamepadButton {
     this.pos.y = y;
   }
   updateButton() {
+    if (this.gamepad.mode == "ds4") {
+      this.element.textContent = ds4Labels[this.symbol] ?? this.def.label;
+    } else {
+      this.element.textContent = this.def.label;
+    }
     this.element.style.left = `${this.realPos.x + this.realPos.offsetX}px`;
     this.element.style.top = `${this.realPos.y + this.realPos.offsetY}px`;
     this.element.style.width = `${this.realPos.width}px`;
@@ -804,16 +811,10 @@ function initGamepad() {
     };
   }
   for (const [symbol, def] of Object.entries(buttonDefTable)) {
-    let def2 = def;
-    if (vgamepad.mode == "ds4") {
-      def2 = Object.assign({}, def, {
-        label: ds4Labels[symbol] ?? def.label,
-      });
-    }
     const button = new VGamepadButton(
       vgamepad,
       symbol,
-      def2,
+      def,
       posTable[symbol] ?? defaultPos,
     );
     vgamepad.buttons[symbol] = button;
