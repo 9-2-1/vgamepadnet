@@ -1,697 +1,678 @@
-let mainWebsocket: WebSocket | null = null;
-let vibratePower = 0;
-let peakVibratePower = 0;
-
-let macroDown = false;
-let macroStr = "";
-let macroSteps: Array<string> = [];
-let macroIndex = 0;
-let macroTime: number | null = null;
-
-let latencyTestCallback: ((value: unknown) => void) | null = null;
-const latencyTestTimeout = 1000;
-const latencyTestWait = 1000;
-let latencyTestResults: Array<number> = [];
-const latencyTestResultMax = 1;
-
-type ButtonTableRaw = [string, string, string, ButtonMode, number];
-type ButtonAttr = {
-  label: string;
-  name: string;
-  mode: ButtonMode;
-  size: number;
-};
-type ButtonTable = Record<string, ButtonAttr>;
-let buttonPressed: Record<string, boolean> = {};
-const textToSymbol: Record<string, string> = {};
-
-let state_out: Record<string, number> = {};
-
-function log(x: any): void {
-  command(`log ${JSON.stringify(x)}`);
-}
-
-function command(x: string): void {
-  if (mainWebsocket !== null) {
-    mainWebsocket.send(x);
-  }
-}
-
+type ButtonShape =
+  | "button" // 按钮
+  | "stick" // 虚拟摇杆
+  | "trigger" // 扳机键
+  | "label"; // 显示状态的标签
 type ButtonMode =
-  | "button"
-  | "stick"
-  | "trigger"
-  | "fullscreen"
-  | "turbo"
-  | "macrobar"
-  | "macroplay"
-  | "latency";
-const turboButtons: {
-  [symbol: string]: { enabled: boolean; timer: number | null };
-} = {
-  "A:": { enabled: false, timer: null },
-  "B:": { enabled: false, timer: null },
-  "X:": { enabled: false, timer: null },
-  "Y:": { enabled: false, timer: null },
+  | { mode: "press"; name: string } // 按下发送“1”，松开发送“0”
+  | { mode: "trigger"; name: string } // 根据拖动的位置或者长度发送数值
+  | { mode: "stick"; name: string } // 发送X,Y两个数值(-1.0~1.0)，点击时发送“点击”事件
+  | { mode: "fullscreen" } // 全屏
+  | { mode: "macro"; id: number } // 宏按键
+  | { mode: "edit" } // 编辑布局
+  | { mode: "record" } // 录制宏
+  | { mode: "turbo" } // 连发键
+  | { mode: "speed"; value?: number } // 速度变化
+  | { mode: "status" } // 状态显示
+  | { mode: "settings" }; // 其他设定
+type ButtonDef = {
+  label: string;
+  shape: ButtonShape;
+  mode?: ButtonMode; // 按键模式，默认根据label和shape生成
 };
+type ButtonPos = {
+  x: number;
+  y: number;
+  scale: number;
+  show: boolean;
+};
+type ButtonDefTable = Record<string, ButtonDef>;
+type ButtonPosTable = Record<string, ButtonPos>;
+type GamepadState = Record<string, number>;
 
-function createButton(
-  mode: ButtonMode,
-  label: string,
-  name: string,
-  symbol: string,
-  top: number,
-  left: number,
-  height: number,
-  width: number,
-) {
-  let tagname: "input" | "button" = "button";
-  let Tracker = (down: boolean, x: number, y: number) => {};
-  let TrackerUp = () => {};
-  let TrackerDown = () => {};
-  let OnInput = () => {};
-  switch (mode) {
-    case "button":
-      {
-        TrackerUp = () => {
-          buttonUp(symbol);
-        };
-        TrackerDown = () => {
-          buttonDown(symbol);
-        };
-      }
-      break;
-    case "stick":
-      {
-        Tracker = (down: boolean, x: number, y: number) => {
-          // log(`${x}, ${y}`);
-          if (down) {
-            x = 2 * x - 1;
-            y = -(2 * y - 1);
-            x *= 1.5;
-            y *= 1.5;
-            let d = Math.sqrt(x * x + y * y);
-            if (d > 1) {
-              x /= d;
-              y /= d;
-              d = 1;
-            }
-          } else {
-            x = 0;
-            y = 0;
-          }
-          command(`set ${name}x ${x} ${name}y ${y}`);
-        };
-      }
-      break;
-    case "trigger":
-      {
-        Tracker = (down: boolean, x: number, y: number) => {
-          if (down) {
-            y = 1.5 * y;
-            if (y > 1) {
-              y = 1;
-            }
-          } else {
-            y = 0;
-          }
-          command(`set ${name} ${y}`);
-        };
-      }
-
-      break;
-    case "fullscreen":
-      {
-        TrackerDown = () => {
-          toggleFullScreen();
-        };
-      }
-      break;
-    case "turbo":
-      {
-        TrackerDown = () => {
-          toggleButtonRepeat(symbol[0] + ":");
-        };
-      }
-      break;
-    case "macrobar":
-      {
-        tagname = "input";
-        OnInput = () => {
-          const val = button.value.trim();
-          macroSteps = val.split(/\s+/).filter((s) => s && s !== " ");
-          macroStr = val;
-        };
-      }
-      break;
-    case "macroplay":
-      {
-        TrackerDown = () => {
-          if (macroTime === null) {
-            if (macroStr !== "") {
-              macroIndex = 0;
-              macroDown = false;
-              macroTime = setInterval(macroLoop, 100);
-            }
-          } else {
-            clearInterval(macroTime);
-            if (macroDown) {
-              macroLoop();
-            }
-            macroTime = null;
-          }
-          updateButtons();
-        };
-      }
-      break;
-    case "latency":
-      {
-      }
-      break;
-  }
-
-  const button = document.createElement(tagname);
-  button.classList.add("button");
-  button.classList.add(`button-${mode}`);
-  button.textContent = label;
-  button.style.top = `${top}px`;
-  button.style.left = `${left}px`;
-  button.style.height = `${height}px`;
-  button.style.width = `${width}px`;
-  button.style.fontSize = `${height * 0.5}px`;
-  if (mode == "latency") {
-    button.style.fontSize = `${height * 0.3}px`;
-  }
-  if (button instanceof HTMLButtonElement) {
-    let oldDown = false;
-    const TrackerRawPos = (down: boolean, x: number, y: number) => {
-      if (down != oldDown) {
-        if (down) {
-          button.classList.add("button-down");
-          TrackerDown();
-        } else {
-          button.classList.remove("button-down");
-          TrackerUp();
-        }
-        oldDown = down;
-      }
-      Tracker(down, (x - left) / width, (y - top) / height);
-    };
-
-    const mouseMoveTracker = (ev: MouseEvent) => {
-      TrackerRawPos(true, ev.clientX, ev.clientY);
-      ev.preventDefault();
-      ev.stopPropagation();
-    };
-    const mouseUpTracker = (ev: MouseEvent) => {
-      TrackerRawPos(false, ev.clientX, ev.clientY);
-      window.removeEventListener("mousemove", mouseMoveTracker);
-      window.removeEventListener("mouseup", mouseUpTracker);
-      ev.preventDefault();
-      ev.stopPropagation();
-    };
-    const touchTracker = (ev: TouchEvent) => {
-      if (ev.targetTouches.length == 0) {
-        TrackerRawPos(false, 0, 0);
-      } else {
-        let x = 0;
-        let y = 0;
-        let n = 0;
-        for (let i = 0; i < ev.targetTouches.length; i++) {
-          const touch = ev.targetTouches[i];
-          x += touch.clientX;
-          y += touch.clientY;
-          n += 1;
-        }
-        TrackerRawPos(true, x / n, y / n);
-      }
-      ev.preventDefault();
-      ev.stopPropagation();
-    };
-    button.addEventListener("mousedown", (ev) => {
-      TrackerRawPos(true, ev.clientX, ev.clientY);
-      window.addEventListener("mousemove", mouseMoveTracker);
-      window.addEventListener("mouseup", mouseUpTracker);
-      ev.preventDefault();
-      ev.stopPropagation();
-    });
-    button.addEventListener("touchstart", touchTracker);
-    button.addEventListener("touchmove", touchTracker);
-    button.addEventListener("touchend", touchTracker);
-  }
-  if (button instanceof HTMLInputElement) {
-    button.addEventListener("input", OnInput, true);
-  }
-
-  document.body.appendChild(button);
-  return button;
-}
-function createGridLine(
-  left: number,
-  top: number,
-  height: number,
-  width: number,
-) {
-  const gridline = document.createElement("span");
-  gridline.classList.add("gridline");
-  gridline.style.top = `${top}px`;
-  gridline.style.left = `${left}px`;
-  gridline.style.height = `${height}px`;
-  gridline.style.width = `${width}px`;
-  document.body.appendChild(gridline);
-  return gridline;
-}
-let oldViberatePower = 0;
-let oldViberateCount = 0;
-function vibration() {
-  const a: Array<number> = [];
-  if (peakVibratePower == oldViberatePower) {
-    if (peakVibratePower == 0) {
-      peakVibratePower = vibratePower;
-      return;
-    }
-    if (oldViberateCount < 10) {
-      // 10*30=300ms
-      oldViberateCount += 1;
-      peakVibratePower = vibratePower;
-      return;
-    }
-  }
-  const minunit = 5;
-  const tot = 100;
-  let totOn = 0;
-  let totOff = 0;
-  const fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.7;
-  if (fixedPower >= 1) {
-    a.push(tot);
-  } else if (fixedPower <= 0) {
-    // pass
-  } else {
-    while (totOn + totOff < tot) {
-      if (fixedPower > 0.5) {
-        totOff += minunit;
-        const on = Math.floor(
-          (totOff * fixedPower) / (1 - fixedPower) - totOn + 0.5,
-        );
-        a.push(on);
-        a.push(minunit);
-        totOn += on;
-      } else {
-        totOn += minunit;
-        const off = Math.floor(
-          (totOn * (1 - fixedPower)) / fixedPower - totOff + 0.5,
-        );
-        a.push(minunit);
-        a.push(off);
-        totOff += off;
-      }
-    }
-  }
-  // log(`peak: ${peakVibratePower} a: ${a}`);
-  navigator?.vibrate(a);
-  oldViberatePower = peakVibratePower;
-  oldViberateCount = 0;
-}
-
-setInterval(vibration, 10);
-const buttonmap = [
-  "                                                                                ",
-  "  LT                                  GU                                    RT  ",
-  "              LS                                            Y:                  ",
-  "                                                                                ",
-  "  LB              L.                                    X:      B:          RB  ",
-  "                              BA      MS      ST                                ",
-  "                                                            A:                  ",
-  "                                                                                ",
-  "                          DU                          RS                        ",
-  "                                                                    Y~          ",
-  "                      DL      DR                  R.                            ",
-  "                                                                X~      B~      ",
-  "                          DD                                                    ",
-  "                                                                    A~          ",
-  "                                                                                ",
-  "                                                                                ",
-  "                          IN                      MA                        []  ",
-  "                                                                                ",
-];
-function parseButtonTable(table: Array<ButtonTableRaw>): ButtonTable {
-  const ret: ButtonTable = {};
-  for (const line of table) {
-    const [symbol, label, name, mode, size] = line;
-    ret[symbol] = { label, name, mode, size };
-  }
-  return ret;
-}
-const buttonTable: ButtonTable = parseButtonTable([
-  // [Symbol, Label, Name, Type, Size]
-  ["A:", "A", "A", "button", 3],
-  ["B:", "B", "B", "button", 3],
-  ["X:", "X", "X", "button", 3],
-  ["Y:", "Y", "Y", "button", 3],
-  ["LS", "LS", "LS", "button", 3],
-  ["RS", "RS", "RS", "button", 3],
-  ["LB", "LB", "LB", "button", 3],
-  ["RB", "RB", "RB", "button", 3],
-  ["DU", "↑", "up", "button", 3],
-  ["DD", "↓", "down", "button", 3],
-  ["DL", "←", "left", "button", 3],
-  ["DR", "→", "right", "button", 3],
-  ["ST", "☰", "start", "button", 3],
-  ["BA", "❐", "back", "button", 3],
-  ["GU", "⭙", "guide", "button", 3],
-  ["L.", "L", "LS", "stick", 5],
-  ["R.", "R", "RS", "stick", 5],
-  ["LT", "LT", "LT", "trigger", 3],
-  ["RT", "RT", "RT", "trigger", 3],
-  ["[]", "⛶", "", "fullscreen", 3],
-  ["A~", "A", "A", "turbo", 3],
-  ["B~", "B", "B", "turbo", 3],
-  ["X~", "X", "X", "turbo", 3],
-  ["Y~", "Y", "Y", "turbo", 3],
-  ["IN", "", "", "macrobar", 3],
-  ["MA", "▶", "", "macroplay", 3],
-  ["MS", "⏲", "", "latency", 3],
-]);
-let buttonNamed: Record<string, HTMLElement> = {};
-
-function reload() {
-  if (document.activeElement instanceof HTMLInputElement) {
-    // Don't reload while typing
-    return;
-  }
-  document.querySelectorAll(".button").forEach((element) => {
-    element.remove();
-  });
-  document.querySelectorAll(".gridline").forEach((element) => {
-    element.remove();
-  });
-  const vw = document.body.clientWidth;
-  const vh = document.body.clientHeight;
-  const mapHeight = buttonmap.length;
-  const mapWidth = buttonmap[0].length / 2;
-  const buttonHeight = vw / mapWidth;
-  const buttonWidth = vh / mapHeight;
-  const buttonA = Math.min(buttonHeight, buttonWidth);
-  const buttonXoffset = (vw - buttonA * mapWidth) / 2;
-  const buttonYoffset = (vh - buttonA * mapHeight) / 2;
-  // lines
-  for (let i = 0; i <= mapHeight; i++) {
-    createGridLine(
-      buttonXoffset,
-      buttonYoffset + i * buttonA,
-      0,
-      mapWidth * buttonA,
-    );
-  }
-  for (let j = 0; j <= mapWidth; j++) {
-    createGridLine(
-      buttonXoffset + j * buttonA,
-      buttonYoffset,
-      mapHeight * buttonA,
-      0,
-    );
-  }
-  // buttons
-  for (let i = 0; i < buttonmap.length; i++) {
-    for (let j = 0; j < buttonmap[i].length / 2; j++) {
-      const symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
-      if (symbol == "  ") {
-        continue;
-      }
-      const buttonX = buttonXoffset + j * buttonA + buttonA / 2;
-      const buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-      const attr = buttonTable[symbol];
-      if (attr) {
-        buttonNamed[symbol] = createButton(
-          attr.mode,
-          attr.label,
-          attr.name,
-          symbol,
-          buttonY - (attr.size * buttonA) / 2,
-          buttonX - (attr.size * buttonA) / 2,
-          attr.size * buttonA,
-          attr.mode == "macrobar"
-            ? attr.size * 4 * buttonA
-            : attr.size * buttonA,
-        );
-        if (attr.mode == "button" || attr.mode == "trigger") {
-          textToSymbol[symbol.toUpperCase()] = symbol;
-          textToSymbol[attr.label.toUpperCase()] = symbol;
-        }
-      }
-    }
-  }
-  textToSymbol["UP"] = "DU";
-  textToSymbol["DOWN"] = "DD";
-  textToSymbol["LEFT"] = "DL";
-  textToSymbol["RIGHT"] = "DR";
-  textToSymbol["^"] = "DU";
-  textToSymbol["v"] = "DD";
-  textToSymbol["<"] = "DL";
-  textToSymbol[">"] = "DR";
-  updateButtons();
-}
-
-function wsConnect() {
-  const cwd = window.location.host + window.location.pathname;
-  const nextWebsocket = new WebSocket(`ws://${cwd}websocket`);
-  nextWebsocket.addEventListener("open", (event) => {
-    mainWebsocket = nextWebsocket;
-    updateButtons();
-  });
-  nextWebsocket.addEventListener("error", (event) => {
-    console.error(event);
-    mainWebsocket = null;
-    updateButtons();
-  });
-  nextWebsocket.addEventListener("close", (event) => {
-    console.error("mainWebsocket closed");
-    mainWebsocket = null;
-    updateButtons();
-    setTimeout(wsConnect, 5000);
-  });
-  nextWebsocket.addEventListener("message", (event) => {
-    const msg = event.data;
-    if (typeof msg == "string") {
-      const args = msg.split(" ");
-      if (args[0] == "set") {
-        for (let i = 1; i + 1 < args.length; i++) {
-          state_out[args[i]] = Number(args[i + 1]);
-        }
-        const large_motor = state_out["large_motor"] ?? 0;
-        const small_motor = state_out["small_motor"] ?? 0;
-        const vibratePower = Math.max(large_motor, small_motor);
-        if (vibratePower > peakVibratePower) {
-          peakVibratePower = vibratePower;
-        }
-      } else if (args[0] == "pong") {
-        if (latencyTestCallback !== null) {
-          latencyTestCallback(null);
-        }
-      } else {
-        console.warn(`Unknown command ${msg}`);
-      }
-    }
-  });
-}
-function toggleButtonRepeat(symbol: string) {
-  const buttonState = turboButtons[symbol];
-  if (buttonState.timer !== null) {
-    clearTimeout(buttonState.timer);
-    buttonState.timer = null;
-    buttonUp(symbol);
-  }
-  buttonState.enabled = !buttonState.enabled;
-  if (buttonState.enabled) {
-    turboButtonDown(symbol);
-  }
-  updateButtons();
-}
-
-function buttonDown(symbol: string) {
-  const attr = buttonTable[symbol];
-  if (attr) {
-    if (attr.mode == "button" || attr.mode == "trigger") {
-      command(`set ${attr.name} 1`);
-    } else {
-      console.warn(`Unable to down button ${symbol}`);
-    }
-    buttonPressed[symbol] = true;
-    updateButtons();
-  } else {
-    console.warn(`Unknown button ${symbol}`);
-  }
-}
-function buttonUp(symbol: string) {
-  const attr = buttonTable[symbol];
-  if (attr) {
-    if (attr.mode == "button" || attr.mode == "trigger") {
-      command(`set ${attr.name} 0`);
-    } else {
-      console.warn(`Unable to down button ${symbol}`);
-    }
-    buttonPressed[symbol] = false;
-    updateButtons();
-  } else {
-    console.warn(`Unknown button ${symbol}`);
-  }
-}
-function turboButtonDown(symbol: string) {
-  buttonDown(symbol);
-  const buttonState = turboButtons[symbol];
-  buttonState.timer = setTimeout(() => turboButtonUp(symbol), 100);
-}
-
-function turboButtonUp(symbol: string) {
-  buttonUp(symbol);
-  const buttonState = turboButtons[symbol];
-  buttonState.timer = setTimeout(() => turboButtonDown(symbol), 100);
-}
-
-function macroLoop() {
-  if (macroIndex >= macroSteps.length) {
-    macroIndex = 0;
-  }
-  let step = macroSteps[macroIndex];
-  step = step.toUpperCase();
-  if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
-    step = textToSymbol[step];
-  }
-  if (macroDown) {
-    if (step !== ".") {
-      buttonUp(step);
-    }
-    macroIndex++;
-    macroDown = false;
-  } else {
-    if (step !== ".") {
-      buttonDown(step);
-    }
-    macroDown = true;
-  }
-}
-
-function checkLatency() {
-  if (mainWebsocket === null) {
-    latencyTestResults = [];
-    updateButtons();
-    setTimeout(checkLatency, latencyTestWait);
-    return;
-  }
-  mainWebsocket.send("ping");
-  const latencyTestStart = new Date().getTime();
-  new Promise((resolve, reject) => {
-    latencyTestCallback = resolve;
-    setTimeout(reject, latencyTestTimeout);
-  })
-    .then(() => {
-      latencyTestCallback = null;
-      const latencyTestStop = new Date().getTime();
-      latencyTestResults.push(latencyTestStop - latencyTestStart);
-      if (latencyTestResults.length > latencyTestResultMax) {
-        latencyTestResults.shift();
-      }
-      updateButtons();
-      setTimeout(checkLatency, latencyTestWait);
-    })
-    .catch(() => {
-      latencyTestCallback = null;
-      latencyTestResults = [];
-      updateButtons();
-      setTimeout(checkLatency, latencyTestWait);
-    });
-}
-
-function updateButtons() {
-  const bMS = buttonNamed["MS"];
-  if (bMS instanceof HTMLButtonElement) {
-    bMS.classList.remove("button-excellent");
-    bMS.classList.remove("button-good");
-    bMS.classList.remove("button-normal");
-    bMS.classList.remove("button-bad");
-    bMS.classList.remove("button-uncertain");
-    bMS.classList.remove("button-disconnected");
-    if (mainWebsocket === null) {
-      bMS.textContent = "!";
-      bMS.classList.add("button-disconnected");
-    } else {
-      if (latencyTestResults.length == 0) {
-        bMS.textContent = "?";
-        bMS.classList.add("button-uncertain");
-      } else {
-        let sum = 0;
-        for (let v of latencyTestResults) {
-          sum += v;
-        }
-        sum = Math.floor(sum / latencyTestResults.length);
-        bMS.textContent = `${sum}ms`;
-        if (sum < 50) {
-          bMS.classList.add("button-excellent");
-        } else if (sum < 100) {
-          bMS.classList.add("button-good");
-        } else if (sum < 200) {
-          bMS.classList.add("button-normal");
-        } else {
-          bMS.classList.add("button-bad");
-        }
-      }
-    }
-  }
-  Object.keys(buttonNamed).forEach((sym) => {
-    const button = buttonNamed[sym];
-    if (sym[1] == "~") {
-      // turbo button
-      const tsym = sym[0] + ":";
-      if (turboButtons[tsym].enabled) {
-        button.classList.add("button-locked");
-      } else {
-        button.classList.remove("button-locked");
-      }
-    }
-    if (buttonPressed[sym]) {
-      button.classList.add("button-pressed");
-    } else {
-      button.classList.remove("button-pressed");
-    }
-  });
-  const bMA = buttonNamed["MA"];
-  const bIN = buttonNamed["IN"];
-  if (bIN instanceof HTMLInputElement) {
-    if (macroTime === null) {
-      bMA.classList.remove("button-locked");
-      bIN.disabled = false;
-    } else {
-      bMA.classList.add("button-locked");
-      bIN.disabled = true;
-    }
-    bIN.value = macroStr;
-  }
-}
-window.addEventListener("load", () => {
-  reload();
-  vibration();
-  wsConnect();
-  checkLatency();
-});
-window.addEventListener("resize", reload);
-window.addEventListener("contextmenu", (event) => {
-  event.stopPropagation();
-  event.preventDefault();
-});
+const buttonDefTable: ButtonDefTable = {
+  // gamepad buttons
+  LB: { label: "LB", shape: "button" },
+  RB: { label: "RB", shape: "button" },
+  LT: { label: "LT", shape: "trigger" },
+  RT: { label: "RT", shape: "trigger" },
+  LS: { label: "LS", shape: "stick" },
+  up: { label: "↑", shape: "button" },
+  down: { label: "↓", shape: "button" },
+  left: { label: "←", shape: "button" },
+  right: { label: "→", shape: "button" },
+  RS: { label: "RS", shape: "stick" },
+  A: { label: "A", shape: "button" },
+  B: { label: "B", shape: "button" },
+  X: { label: "X", shape: "button" },
+  Y: { label: "Y", shape: "button" },
+  back: { label: "❐", shape: "button" },
+  start: { label: "☰", shape: "button" },
+  guide: { label: "⭙", shape: "button" },
+  // easy buttons
+  LTb: { label: "LT", shape: "button", mode: { mode: "press", name: "LT" } },
+  RTb: { label: "RT", shape: "button", mode: { mode: "press", name: "RT" } },
+  LSb: { label: "LS", shape: "button", mode: { mode: "press", name: "LS" } },
+  RSb: { label: "RS", shape: "button", mode: { mode: "press", name: "RS" } },
+  // macro
+  M1: { label: "M1", shape: "button", mode: { mode: "macro", id: 1 } },
+  M2: { label: "M2", shape: "button", mode: { mode: "macro", id: 2 } },
+  M3: { label: "M3", shape: "button", mode: { mode: "macro", id: 3 } },
+  M4: { label: "M4", shape: "button", mode: { mode: "macro", id: 4 } },
+  // functional
+  fullscreen: { label: "⛶", shape: "button", mode: { mode: "fullscreen" } },
+  record: { label: "●", shape: "button", mode: { mode: "record" } },
+  turbo: { label: "↻", shape: "button", mode: { mode: "turbo" } },
+  "speed-": { label: "≪", shape: "button", mode: { mode: "speed", value: -1 } },
+  "speed+": { label: "≫", shape: "button", mode: { mode: "speed", value: 1 } },
+  status: {
+    label: "JavaScript 错误",
+    shape: "label",
+    mode: { mode: "status" },
+  },
+  settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
+  edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
+};
 
 const nosleep = new NoSleep();
-
 function toggleFullScreen() {
   if (!document.fullscreenElement) {
     document.documentElement?.requestFullscreen();
     try {
+      // @ts-ignore
       screen?.orientation?.lock("landscape");
     } catch (e) {
       console.warn(e);
     }
-    nosleep.enable();
+    try {
+      nosleep.enable();
+    } catch (e) {
+      console.warn(e);
+    }
   } else if (document.exitFullscreen) {
     document.exitFullscreen();
-    nosleep.disable();
+    try {
+      nosleep.disable();
+    } catch (e) {
+      console.warn(e);
+    }
   }
 }
+function defaultMode(def: ButtonDef, symbol: string): ButtonMode {
+  switch (def.shape) {
+    case "button":
+      return { mode: "press", name: symbol };
+    case "stick":
+      return { mode: "stick", name: symbol };
+    case "trigger":
+      return { mode: "trigger", name: symbol };
+    default:
+      throw new Error(`Unable to derive mode for ${symbol}`);
+  }
+}
+function addTouchListeners(
+  button: HTMLButtonElement,
+  touchCallback: (down: boolean, clientX: number, clientY: number) => void,
+) {
+  // mouse
+  function onMouseMove(ev: MouseEvent) {
+    touchCallback(true, ev.clientX, ev.clientY);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function onMouseUp(ev: MouseEvent) {
+    touchCallback(false, ev.clientX, ev.clientY);
+    window.removeEventListener("mousemove", onMouseMove);
+    window.removeEventListener("mouseup", onMouseUp);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  function onMouseDown(ev: MouseEvent) {
+    touchCallback(true, ev.clientX, ev.clientY);
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  button.addEventListener("mousedown", onMouseDown);
+  // Touch
+  function onTouchChange(ev: TouchEvent) {
+    if (ev.targetTouches.length === 0) {
+      button.classList.remove("button-touchdown");
+      touchCallback(false, 0, 0);
+    } else {
+      button.classList.add("button-touchdown");
+      let x = 0,
+        y = 0,
+        n = ev.targetTouches.length;
+      for (let i = 0; i < n; i++) {
+        const touch = ev.targetTouches.item(i);
+        if (touch !== null) {
+          x += touch.clientX;
+          y += touch.clientY;
+        }
+      }
+      touchCallback(true, x / n, y / n);
+    }
+    ev.stopPropagation();
+    ev.preventDefault();
+  }
+  button.addEventListener("touchstart", onTouchChange);
+  button.addEventListener("touchmove", onTouchChange);
+  button.addEventListener("touchend", onTouchChange);
+  button.addEventListener("touchcancel", onTouchChange);
+  // revert
+  function removeTouchListeners() {
+    button.removeEventListener("mousedown", onMouseDown);
+    button.removeEventListener("mouseup", onMouseUp);
+    button.removeEventListener("mousemove", onMouseMove);
+    button.removeEventListener("touchstart", onTouchChange);
+    button.removeEventListener("touchmove", onTouchChange);
+    button.removeEventListener("touchend", onTouchChange);
+    button.removeEventListener("touchcancel", onTouchChange);
+  }
+  return removeTouchListeners;
+}
+
+type GamepadMode = "xbox" | "ds4";
+class VGamepad {
+  mode: GamepadMode;
+  state: GamepadState;
+  state_out: GamepadState;
+  editMode: boolean;
+  element: HTMLDivElement;
+  buttons: Record<string, VGamepadButton>;
+  serverLink: string;
+  websocket: WebSocket | null;
+  websocketOpening: boolean;
+  constructor(parent: HTMLElement, serverLink: string) {
+    this.state = {};
+    this.state_out = {};
+    this.mode = "ds4";
+    this.editMode = false;
+    this.element = document.createElement("div");
+    this.element.classList.add("gamepad");
+    this.buttons = {};
+    this.serverLink = serverLink;
+    this.websocket = null;
+    this.websocketOpening = false;
+    parent.appendChild(this.element);
+    this.connect();
+  }
+  updateButtons() {
+    for (const btn of Object.values(this.buttons)) {
+      btn.posToRealPos();
+      btn.updateButton();
+    }
+  }
+  setEditMode(editMode: boolean) {
+    this.editMode = editMode;
+    if (editMode) {
+      this.element.classList.add("gamepad-edit");
+    } else {
+      this.element.classList.remove("gamepad-edit");
+    }
+    this.updateButtons();
+  }
+  savePosTable() {
+    let totalPos: ButtonPosTable = {};
+    for (const [symbol, btn] of Object.entries(this.buttons)) {
+      totalPos[symbol] = btn.pos;
+    }
+    localStorage.setItem("buttonPosTable", JSON.stringify(totalPos));
+  }
+  setState(name: string, value: number) {
+    if (this.state[name] != value) {
+      if (this.websocket !== null && !this.websocketOpening) {
+        this.websocket.send(`set ${name} ${value}`);
+      }
+      this.state[name] = value;
+    }
+  }
+  connect() {
+    this.websocket = new WebSocket(this.serverLink);
+    this.websocketOpening = true;
+    this.websocket.addEventListener("open", () => {
+      this.websocketOpening = false;
+      this.wsOpen();
+    });
+    this.websocket.addEventListener("message", (ev) => {
+      this.wsMessage(ev.data);
+    });
+    this.websocket.addEventListener("error", (ev) => {
+      console.error(ev);
+    });
+    this.websocket.addEventListener("close", () => {
+      if (this.websocket === null) {
+        console.error("Websocket not ready");
+        return;
+      }
+      this.websocket = null;
+      this.websocketOpening = false;
+      this.wsClose();
+      // retry
+      console.log("close resche");
+      setTimeout(() => {
+        this.connect();
+      }, 1000);
+    });
+  }
+  wsOpen() {
+    if (this.websocket === null || this.websocketOpening) {
+      console.error("Websocket not ready");
+      return;
+    }
+    this.websocket.send(`mode ${this.mode}`);
+  }
+  wsMessage(msg: string) {
+    const args = msg.split(" ");
+    if (args[0] === "set") {
+      for (let i = 1; i + 1 < args.length; i += 2) {
+        this.state_out[args[i]] = parseFloat(args[i + 1]);
+      }
+    }
+  }
+  wsClose() {}
+}
+class VGamepadButton {
+  gamepad: VGamepad;
+  symbol: string;
+  def: ButtonDef;
+  pos: ButtonPos;
+  realPos: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    offsetX: number;
+    offsetY: number;
+  };
+  mode: ButtonMode;
+  editMode: {
+    offsetX: number;
+    offsetY: number;
+    previousTime: number;
+    previousX: number;
+    previousY: number;
+    moved: boolean;
+  };
+  stickDrag: { offsetX: number; offsetY: number };
+  prevDown: boolean;
+  element: HTMLButtonElement;
+  elementShade: HTMLDivElement | null;
+  constructor(
+    gamepad: VGamepad,
+    symbol: string,
+    def: ButtonDef,
+    pos: ButtonPos,
+  ) {
+    this.gamepad = gamepad;
+    this.symbol = symbol;
+    this.def = def;
+    this.pos = pos; // 相对位置(左边界碰到窗口左边界为0，右边界碰到窗口右边界为100)
+    this.realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
+    this.stickDrag = { offsetX: 0, offsetY: 0 };
+    this.mode = def.mode ?? defaultMode(def, symbol);
+    this.editMode = {
+      offsetX: 0,
+      offsetY: 0,
+      previousTime: 0,
+      previousX: 0,
+      previousY: 0,
+      moved: false,
+    };
+    this.prevDown = false;
+    this.element = document.createElement("button");
+    this.element.textContent = this.def.label;
+    this.element.classList.add(
+      "button",
+      `button-${this.symbol}`,
+      `button-${this.def.shape}`,
+    );
+    addTouchListeners(this.element, this.touchCallback.bind(this));
+    this.elementShade = null;
+    if (this.def.shape == "stick" || this.def.shape == "trigger") {
+      this.elementShade = document.createElement("div");
+      this.elementShade.classList.add(
+        "buttonshade",
+        `buttonshade-${this.symbol}`,
+        `buttonshade-${this.def.shape}`,
+      );
+      this.gamepad.element.appendChild(this.elementShade);
+    }
+    this.gamepad.element.appendChild(this.element);
+    this.posToRealPos();
+    this.updateButton();
+  }
+  touchCallbackEditmode(down: boolean, clientX: number, clientY: number) {
+    if (this.prevDown) {
+      if (down) {
+        const dragX = clientX - this.editMode.previousX;
+        const dragY = clientY - this.editMode.previousY;
+        if (Math.abs(dragX) > 5 || Math.abs(dragY) > 5) {
+          this.editMode.moved = true;
+        }
+        this.realPos.x = clientX - this.editMode.offsetX;
+        this.realPos.y = clientY - this.editMode.offsetY;
+      } else {
+        this.realPosToPos();
+        if (this.pos.x < 0) {
+          this.pos.x = 0;
+        }
+        if (this.pos.x > 100) {
+          this.pos.x = 100;
+        }
+        if (this.pos.y < 0) {
+          this.pos.y = 0;
+        }
+        if (this.pos.y > 100) {
+          this.pos.y = 100;
+        }
+        this.posToRealPos();
+        const currentTime = new Date().getTime();
+        if (currentTime - this.editMode.previousTime > 500) {
+          this.editMode.moved = true;
+        }
+        if (!this.editMode.moved) {
+          if (this.mode.mode == "edit") {
+            this.gamepad.setEditMode(false);
+            this.gamepad.savePosTable();
+          } else {
+            this.pos.show = !this.pos.show;
+          }
+        }
+      }
+      this.updateButton();
+    } else {
+      if (down) {
+        this.editMode = {
+          offsetX: clientX - this.realPos.x,
+          offsetY: clientY - this.realPos.y,
+          previousTime: new Date().getTime(),
+          previousX: clientX,
+          previousY: clientY,
+          moved: false,
+        };
+      }
+      this.updateButton();
+    }
+  }
+  touchCallback(down: boolean, clientX: number, clientY: number) {
+    if (this.gamepad.editMode) {
+      this.touchCallbackEditmode(down, clientX, clientY);
+      this.prevDown = down;
+      return;
+    }
+    if (down) {
+      this.element.classList.add("button-touchdown");
+    } else {
+      this.element.classList.remove("button-touchdown");
+    }
+    switch (this.mode.mode) {
+      case "press":
+        this.gamepad.setState(this.mode.name, down ? 1 : 0);
+        break;
+      case "trigger":
+        {
+          let sy = 0;
+          if (down) {
+            if (!this.prevDown) {
+              // this.realPos.x for fix position
+              this.stickDrag.offsetX = clientX;
+              this.stickDrag.offsetY = clientY;
+            }
+            sy = ((clientY - this.stickDrag.offsetY) / this.realPos.height) * 2;
+            if (sy > 1) {
+              sy = 1;
+            }
+            if (sy < 0) {
+              sy = 0;
+            }
+          }
+          this.gamepad.setState(this.mode.name, sy);
+          this.realPos.offsetY = sy * 0.5 * this.realPos.height;
+          this.updateButton();
+        }
+        break;
+      case "stick":
+        {
+          let sx = 0,
+            sy = 0;
+          if (down) {
+            if (!this.prevDown) {
+              // this.realPos.x for fix position
+              this.stickDrag.offsetX = clientX;
+              this.stickDrag.offsetY = clientY;
+            }
+            sx = ((clientX - this.stickDrag.offsetX) / this.realPos.width) * 2;
+            sy =
+              (-(clientY - this.stickDrag.offsetY) / this.realPos.height) * 2;
+            const d = Math.sqrt(sx * sx + sy * sy);
+            if (d > 1) {
+              sx /= d;
+              sy /= d;
+            }
+          }
+          this.gamepad.setState(`${this.mode.name}x`, down ? sx : 0);
+          this.gamepad.setState(`${this.mode.name}y`, down ? sy : 0);
+          this.realPos.offsetX = sx * 0.5 * this.realPos.width;
+          this.realPos.offsetY = sy * -0.5 * this.realPos.height;
+          this.updateButton();
+        }
+        break;
+      case "fullscreen":
+        if (down && !this.prevDown) {
+          toggleFullScreen();
+        }
+        break;
+      case "edit":
+        if (down && !this.prevDown) {
+          this.gamepad.setEditMode(true);
+          this.editMode = {
+            offsetX: clientX - this.realPos.x,
+            offsetY: clientY - this.realPos.y,
+            previousTime: new Date().getTime(),
+            previousX: clientX,
+            previousY: clientY,
+            moved: true, // 防止点击后立即触发放开导致退出编辑模式
+          };
+        }
+        break;
+      case "macro":
+        // if (this.gamepad.recordState == 'select') {
+        // if (down && !this.prevDown) {
+        //   recordTarget=this.def.mode.id
+        //   record
+        // }
+        // } else if (...recordState == 'none') {
+        //   sendMacro(this.mode.id);
+        break;
+      case "record":
+        // if (down &&!this.prevDown) {
+        // } else if (...recordState == 'none') {
+        // select
+        // if (this.gamepad.recordState == 'select') {
+        // }
+        break;
+      case "turbo":
+        // if (down &&!this.prevDown) {
+        //   sendMacro(this.mode.id);
+        //   gamepad.turboMode
+        // }else{
+        // turbomode...
+        //}
+        break;
+      case "speed":
+        // if (down &&!this.prevDown) {
+        //   sendMacro(this.mode.id);
+        //   gamepad.macroSpeed
+        // }
+        break;
+      case "status":
+        // No need to interact
+        break;
+      case "settings":
+        if (down && !this.prevDown) {
+          prompt(
+            "copy settings",
+            localStorage.getItem("buttonPosTable") ?? "{}",
+          );
+          if (confirm("Reset settings?")) {
+            localStorage.clear();
+            window.location.reload();
+          }
+        }
+        break;
+    }
+    this.prevDown = down;
+  }
+  posToRealPos() {
+    const height = this.gamepad.element.clientHeight;
+    const width = this.gamepad.element.clientWidth;
+    // assume height > width
+    const scale = (Math.min(height, width) * this.pos.scale) / 100;
+    const x = (this.pos.x * (width - scale)) / 100;
+    const y = (this.pos.y * (height - scale)) / 100;
+    this.realPos.x = x;
+    this.realPos.y = y;
+    this.realPos.width = scale;
+    this.realPos.height = scale;
+  }
+  realPosToPos() {
+    const height = this.gamepad.element.clientHeight;
+    const width = this.gamepad.element.clientWidth;
+    // assume height > width
+    const scale = (Math.min(height, width) * this.pos.scale) / 100;
+    const x = (this.realPos.x * 100) / (width - scale);
+    const y = (this.realPos.y * 100) / (height - scale);
+    this.pos.x = x;
+    this.pos.y = y;
+  }
+  updateButton() {
+    this.element.style.left = `${this.realPos.x + this.realPos.offsetX}px`;
+    this.element.style.top = `${this.realPos.y + this.realPos.offsetY}px`;
+    this.element.style.width = `${this.realPos.width}px`;
+    this.element.style.height = `${this.realPos.height}px`;
+    this.element.style.fontSize = `${this.realPos.height * 0.5}px`;
+    if (!this.pos.show) {
+      this.element.classList.add("button-hide");
+    } else {
+      this.element.classList.remove("button-hide");
+    }
+    if (this.elementShade !== null) {
+      this.elementShade.style.left = `${this.realPos.x}px`;
+      this.elementShade.style.top = `${this.realPos.y}px`;
+      this.elementShade.style.width = `${this.realPos.width}px`;
+      this.elementShade.style.height = `${this.realPos.height}px`;
+      if (!this.pos.show) {
+        this.elementShade.classList.add("button-hide");
+      } else {
+        this.elementShade.classList.remove("button-hide");
+      }
+    }
+  }
+}
+const defaultPosTable: ButtonPosTable = {
+  LB: { x: 10.448151034313028, y: 26.967594358656143, scale: 20, show: true },
+  RB: { x: 89.75288216002276, y: 20.48611111111111, scale: 20, show: true },
+  LT: { x: 1.9659750517987205, y: 74.76852072609796, scale: 20, show: false },
+  RT: { x: 10.05092821629621, y: 98.49537346098158, scale: 20, show: false },
+  LS: { x: 25.046210008783582, y: 19.742057310841094, scale: 20, show: true },
+  up: { x: 26.160016374861247, y: 55.45634744028566, scale: 20, show: true },
+  down: { x: 26.04363831208012, y: 88.6573968110261, scale: 20, show: true },
+  left: { x: 19.646652660405252, y: 71.89153085940724, scale: 20, show: true },
+  right: { x: 32.638172557906465, y: 72.33795236658165, scale: 20, show: true },
+  RS: { x: 62.30258743381299, y: 62.516539689725036, scale: 20, show: true },
+  A: { x: 72.96207905613684, y: 39.533730158730194, scale: 20, show: true },
+  B: { x: 79.04724703990307, y: 24.239411808195566, scale: 20, show: true },
+  X: { x: 67.44732718216946, y: 24.999992935745812, scale: 20, show: true },
+  Y: { x: 73.01095713556357, y: 9.259263674418131, scale: 20, show: true },
+  back: { x: 60.16938081538901, y: 2.5132292792910564, scale: 20, show: true },
+  start: { x: 37.01578569925944, y: 2.2652120817275287, scale: 20, show: true },
+  guide: { x: 48.66870774800849, y: 13.88888888888889, scale: 20, show: true },
+  LTb: { x: 14.329976765687192, y: 2.4801490168092113, scale: 20, show: true },
+  RTb: { x: 85.03412443424894, y: 0, scale: 20, show: true },
+  LSb: { x: 32.3376019343543, y: 32.77116225510048, scale: 20, show: true },
+  RSb: { x: 74.44554161671081, y: 72.13955026455025, scale: 20, show: true },
+  M1: { x: 88.69142508865353, y: 98.26388888888889, scale: 20, show: false },
+  M2: { x: 78.3247338679961, y: 98.2638782925076, scale: 20, show: false },
+  M3: { x: 97.32023313018686, y: 44.19642857142857, scale: 20, show: false },
+  M4: { x: 98.19819530416518, y: 70.43650970257146, scale: 20, show: false },
+  fullscreen: { x: 100, y: 100, scale: 20, show: true },
+  record: {
+    x: 43.31258282981342,
+    y: 75.97552203627492,
+    scale: 20,
+    show: false,
+  },
+  turbo: {
+    x: 52.822641867929505,
+    y: 75.95899294293118,
+    scale: 20,
+    show: false,
+  },
+  "speed-": {
+    x: 42.9872910289067,
+    y: 98.61108991834853,
+    scale: 20,
+    show: false,
+  },
+  "speed+": {
+    x: 52.6317061812778,
+    y: 99.18982187906902,
+    scale: 20,
+    show: false,
+  },
+  status: {
+    x: 48.611964318465326,
+    y: 44.427910052910065,
+    scale: 20,
+    show: true,
+  },
+  settings: { x: 100, y: 0, scale: 20, show: true },
+  edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
+};
+function initGamepad() {
+  const wsprotocol = document.location.protocol === "https:" ? "wss" : "ws";
+  const PATH = document.location.host + document.location.pathname;
+  const vgamepad: VGamepad = new VGamepad(
+    document.body,
+    `${wsprotocol}://${PATH}websocket`,
+  );
+  // @ts-ignore
+  window.vgamepad = vgamepad;
+  const posTableString = localStorage.getItem("buttonPosTable");
+  let posTable: ButtonPosTable = {};
+  const defaultPos: ButtonPos = { x: 50, y: 50, scale: 20, show: true };
+  let posTableJson: any = null;
+  if (posTableString) {
+    try {
+      posTableJson = JSON.parse(posTableString);
+    } catch (e) {
+      console.error(e);
+    }
+  }
+  for (const symbol of Object.keys(buttonDefTable)) {
+    let posTableR = posTableJson?.[symbol];
+    let defaultP = defaultPosTable[symbol] ?? defaultPos;
+    posTable[symbol] = {
+      x: posTableR?.x ?? defaultP.x,
+      y: posTableR?.y ?? defaultP.y,
+      scale: posTableR?.scale ?? defaultP.scale,
+      show: posTableR?.show ?? defaultP.show,
+    };
+  }
+  for (const [symbol, def] of Object.entries(buttonDefTable)) {
+    const button = new VGamepadButton(
+      vgamepad,
+      symbol,
+      def,
+      posTable[symbol] ?? defaultPos,
+    );
+    vgamepad.buttons[symbol] = button;
+  }
+  window.addEventListener("resize", () => {
+    vgamepad.updateButtons();
+  });
+}
+window.addEventListener("load", initGamepad);

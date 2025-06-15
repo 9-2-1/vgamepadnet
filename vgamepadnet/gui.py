@@ -5,10 +5,11 @@ import queue
 import math
 import traceback
 from dataclasses import dataclass
-from typing import Callable, Dict, Set, Union, DefaultDict, List
+from typing import Callable, Dict, Set, Union, DefaultDict, List, Type, Optional
+from types import TracebackType
 from copy import deepcopy
 
-from .session import Session
+from .session import Session, GamepadMode
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ button_symbol_ds4 = {
 
 @dataclass
 class SessionState:
-    xbox_mode: bool
+    gamepad_mode: GamepadMode
 
     state: DefaultDict[str, Union[int, float]]
     state_out: DefaultDict[str, Union[int, float]]
@@ -52,7 +53,7 @@ class SessionState:
     @classmethod
     def from_session(cls, session: Session) -> "SessionState":
         return cls(
-            xbox_mode=session.xbox_mode,
+            gamepad_mode=session.gamepad_mode,
             state=deepcopy(session.state),
             state_out=deepcopy(session.state_out),
         )
@@ -101,6 +102,7 @@ class GUI:
         self.root.title("VGamepadNet")
         self.root.resizable(False, False)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.root.report_callback_exception = self.guierror
         self.title = tkinter.Label(self.root, text="VGamepadNet", font=("微软雅黑", 16))
         self.title.pack()
         self.links_title = tkinter.Label(self.root, text="链接", font=("微软雅黑", 12))
@@ -136,6 +138,15 @@ class GUI:
     def mainloop(self) -> None:
         self.root.mainloop()
 
+    def guierror(
+        self,
+        exc: Optional[Type[BaseException]],
+        value: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
+        log.error(traceback.format_exception(exc, value, tb))
+        tkinter.messagebox.showerror("错误", "发生错误，请查看debug.log获取详细信息")
+
     def report_error(self) -> None:
         tkinter.messagebox.showerror("错误", "发生错误，请查看debug.log获取详细信息")
         self.close()
@@ -163,15 +174,20 @@ class GUI:
         self.closed = True
 
     def cycle_queue(self) -> None:
-        try:
-            while True:
+        toAdd: Set[int] = set()
+        toChange: Dict[int, SessionState] = {}
+        toDel: Set[int] = set()
+        while True:
+            try:
                 event = self.queue.get_nowait()
                 if isinstance(event, SessionAddEvent):
-                    self.session_add(event.session_id)
+                    # 不需要todel.remove，删除后重新添加
+                    toAdd.add(event.session_id)
                 elif isinstance(event, SessionChangeEvent):
-                    self.session_change(event.session_id, event.state)
+                    toChange[event.session_id] = event.state
                 elif isinstance(event, SessionDelEvent):
-                    self.session_del(event.session_id)
+                    toAdd.discard(event.session_id)
+                    toDel.add(event.session_id)
                 elif isinstance(event, LinkUpdateEvent):
                     self.link_update(event.links)
                 elif isinstance(event, ErrorEvent):
@@ -179,8 +195,16 @@ class GUI:
                         "错误", "发生错误，请查看debug.log获取详细信息"
                     )
                     self.close()
-        except queue.Empty:
-            self.root.after(CYCLE_MS, self.cycle_queue)
+                    break
+            except queue.Empty:
+                break
+        for session_id in toDel:
+            self.session_del(session_id)
+        for session_id in toAdd:
+            self.session_add(session_id)
+        for session_id, state in toChange.items():
+            self.session_change(session_id, state)
+        self.root.after(CYCLE_MS, self.cycle_queue)
 
     def session_add(self, session_id: int) -> None:
         if self.closed:
@@ -215,12 +239,16 @@ class GUI:
         label = self.session_named[session_id]
         assert isinstance(label, tkinter.Frame)
         self.sign.delete("all")
+        if state.gamepad_mode == GamepadMode.NONE:
+            return
         px = 0
         for name in self.signnames:
-            if state.xbox_mode:
+            if state.gamepad_mode == GamepadMode.XBOX:
                 tlabel = button_symbol_xbox.get(name, name)
-            else:
+            elif state.gamepad_mode == GamepadMode.DS4:
                 tlabel = button_symbol_ds4.get(name, name)
+            else:
+                tlabel = name
             value = state.state[name]
             down = value != 0
             bgfill = "lightgreen" if down else "white"
@@ -297,10 +325,12 @@ class GUI:
                 )
             px += 30
         for name in self.signnames_out:
-            if state.xbox_mode:
+            if state.gamepad_mode == GamepadMode.XBOX:
                 tlabel = button_symbol_xbox.get(name, name)
-            else:
+            elif state.gamepad_mode == GamepadMode.DS4:
                 tlabel = button_symbol_ds4.get(name, name)
+            else:
+                tlabel = name
             value = state.state_out[name]
             down = value != 0
             bgfill = "lightgreen" if down else "white"
@@ -308,7 +338,10 @@ class GUI:
             self.sign.create_oval(
                 px + 2, 2, px + 30, 30, fill="white", outline="grey", width=2
             )
-            sv = 2 * value - 1
+            if name == "led_number":
+                sv = 2 * (value / 4) - 1
+            else:
+                sv = 2 * value - 1
             if sv < -1:
                 sv = -1
             if sv > 1:
@@ -342,5 +375,4 @@ class GUI:
     def session_del(self, session_id: int) -> None:
         if self.closed:
             return
-        self.session_named[session_id].pack_forget()
         self.session_named[session_id].destroy()

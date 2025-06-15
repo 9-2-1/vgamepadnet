@@ -3,14 +3,12 @@ import traceback
 import asyncio
 from typing import Awaitable, Callable, Dict, Set, Optional, Union, Literal, DefaultDict
 from collections import defaultdict
+from enum import Enum
 
 from aiohttp import web, WSMsgType, WSCloseCode
 import vgamepad  # type: ignore
 
 log = logging.getLogger(__name__)
-
-
-XBOX_MODE = True
 
 
 button_map_xbox: Dict[str, vgamepad.XUSB_BUTTON] = {
@@ -65,6 +63,12 @@ direction_map_ds4 = {
 }
 
 
+class GamepadMode(Enum):
+    NONE = 0
+    XBOX = 1
+    DS4 = 2
+
+
 class Session:
     """
     一个连接的会话，这里直接控制一个新的虚拟手柄
@@ -78,12 +82,7 @@ class Session:
         self.gamepad: Optional[Union[vgamepad.VX360Gamepad, vgamepad.VDS4Gamepad]] = (
             None
         )
-        if XBOX_MODE:
-            self.gamepad = vgamepad.VX360Gamepad()
-            self.xbox_mode = True
-        else:
-            self.gamepad = vgamepad.VDS4Gamepad()
-            self.xbox_mode = False
+        self.gamepad_mode: GamepadMode = GamepadMode.NONE
 
         self.state: DefaultDict[str, Union[int, float]] = defaultdict(int)
         self.state_out: DefaultDict[str, Union[int, float]] = defaultdict(int)
@@ -95,9 +94,6 @@ class Session:
     async def run(self) -> None:
         await self.ws.send_str(f"set session_id {self.session_id}")
         self.state_out["session_id"] = self.session_id
-        if self.gamepad is None:
-            return
-        self.gamepad.register_notification(self.handle_gamepad_status)
         async for msg in self.ws:
             if msg.type == WSMsgType.TEXT:
                 try:
@@ -140,8 +136,6 @@ class Session:
             )
 
     async def handle_message(self, cmd: str) -> None:
-        if self.gamepad is None:
-            return
         log.debug(f"> {cmd}")
         args = cmd.split(" ")
         try:
@@ -154,19 +148,36 @@ class Session:
                     i += 2
             elif args[0] == "reset":
                 self.state.clear()
-                self.gamepad.reset()
-                self.gamepad.update()
+                if self.gamepad is not None:
+                    self.gamepad.reset()
+                    self.gamepad.update()
+                else:
+                    log.warning("reset: gamepad not ready")
             elif args[0] == "mode":
                 if args[1] == "xbox":
+                    if self.gamepad is not None:
+                        self.gamepad.unregister_notification()
                     self.gamepad = vgamepad.VX360Gamepad()
-                    self.xbox_mode = True
+                    self.gamepad.register_notification(self.handle_gamepad_status)
+                    self.gamepad_mode = GamepadMode.XBOX
                     self.state.clear()
                 elif args[1] == "ds4":
+                    if self.gamepad is not None:
+                        self.gamepad.unregister_notification()
                     self.gamepad = vgamepad.VDS4Gamepad()
-                    self.xbox_mode = False
+                    self.gamepad.register_notification(self.handle_gamepad_status)
+                    self.gamepad_mode = GamepadMode.DS4
                     self.state.clear()
                 else:
                     raise ValueError(f"Wrong mode {args[1]!r}")
+                # trigger value change
+                for name, value in self.state.items():
+                    self.set_state(name, value, force=True)
+            elif args[0] == "update":
+                if self.gamepad is not None:
+                    self.gamepad.update()
+                else:
+                    log.warning("update: gamepad not ready")
             elif args[0] == "log":
                 log.info(cmd[len(args[0]) + 1 :])
             elif args[0] == "ping":
@@ -181,7 +192,9 @@ class Session:
         except Exception:
             log.error(traceback.format_exc())
 
-    def set_state(self, name: str, value: float) -> None:
+    def set_state(self, name: str, value: float, /, force: bool = False) -> None:
+        if self.state[name] == value and not force:
+            return
         self.state[name] = value
         if isinstance(self.gamepad, vgamepad.VX360Gamepad):
             button = button_map_xbox.get(name)
@@ -239,6 +252,8 @@ class Session:
                 log.warning(f"Unknown state {name!r}: {value!r}")
                 del self.state[name]
             self.gamepad.update()
+        else:
+            log.warning(f"gamepad not ready")
 
     async def close(self) -> None:
         """
@@ -251,9 +266,8 @@ class Session:
         """
         移除虚拟手柄
         """
-        if self.gamepad is None:
-            return
-        self.gamepad.unregister_notification()
-        self.gamepad.reset()
-        self.gamepad.update()
-        self.gamepad = None
+        if self.gamepad is not None:
+            self.gamepad.unregister_notification()
+            self.gamepad.reset()
+            self.gamepad.update()
+            self.gamepad = None

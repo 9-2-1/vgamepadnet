@@ -17,6 +17,7 @@ import tracemalloc
 tracemalloc.start()
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, filename="debug.log", filemode="a")
+# logging.basicConfig(level=logging.DEBUG)
 
 HOST = "0.0.0.0"
 PORT = 35714

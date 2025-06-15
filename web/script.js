@@ -1,648 +1,604 @@
-var mainWebsocket = null;
-var vibratePower = 0;
-var peakVibratePower = 0;
-var macroDown = false;
-var macroStr = "";
-var macroSteps = [];
-var macroIndex = 0;
-var macroTime = null;
-var latencyTestCallback = null;
-var latencyTestTimeout = 1000;
-var latencyTestWait = 1000;
-var latencyTestResults = [];
-var latencyTestResultMax = 1;
-var buttonPressed = {};
-var textToSymbol = {};
-var state_out = {};
-function log(x) {
-    command("log ".concat(JSON.stringify(x)));
-}
-function command(x) {
-    if (mainWebsocket !== null) {
-        mainWebsocket.send(x);
-    }
-}
-var turboButtons = {
-    "A:": { enabled: false, timer: null },
-    "B:": { enabled: false, timer: null },
-    "X:": { enabled: false, timer: null },
-    "Y:": { enabled: false, timer: null },
+"use strict";
+var buttonDefTable = {
+    // gamepad buttons
+    LB: { label: "LB", shape: "button" },
+    RB: { label: "RB", shape: "button" },
+    LT: { label: "LT", shape: "trigger" },
+    RT: { label: "RT", shape: "trigger" },
+    LS: { label: "LS", shape: "stick" },
+    up: { label: "↑", shape: "button" },
+    down: { label: "↓", shape: "button" },
+    left: { label: "←", shape: "button" },
+    right: { label: "→", shape: "button" },
+    RS: { label: "RS", shape: "stick" },
+    A: { label: "A", shape: "button" },
+    B: { label: "B", shape: "button" },
+    X: { label: "X", shape: "button" },
+    Y: { label: "Y", shape: "button" },
+    back: { label: "❐", shape: "button" },
+    start: { label: "☰", shape: "button" },
+    guide: { label: "⭙", shape: "button" },
+    // easy buttons
+    LTb: { label: "LT", shape: "button", mode: { mode: "press", name: "LT" } },
+    RTb: { label: "RT", shape: "button", mode: { mode: "press", name: "RT" } },
+    LSb: { label: "LS", shape: "button", mode: { mode: "press", name: "LS" } },
+    RSb: { label: "RS", shape: "button", mode: { mode: "press", name: "RS" } },
+    // macro
+    M1: { label: "M1", shape: "button", mode: { mode: "macro", id: 1 } },
+    M2: { label: "M2", shape: "button", mode: { mode: "macro", id: 2 } },
+    M3: { label: "M3", shape: "button", mode: { mode: "macro", id: 3 } },
+    M4: { label: "M4", shape: "button", mode: { mode: "macro", id: 4 } },
+    // functional
+    fullscreen: { label: "⛶", shape: "button", mode: { mode: "fullscreen" } },
+    record: { label: "●", shape: "button", mode: { mode: "record" } },
+    turbo: { label: "↻", shape: "button", mode: { mode: "turbo" } },
+    "speed-": { label: "≪", shape: "button", mode: { mode: "speed", value: -1 } },
+    "speed+": { label: "≫", shape: "button", mode: { mode: "speed", value: 1 } },
+    status: {
+        label: "JavaScript 错误",
+        shape: "label",
+        mode: { mode: "status" },
+    },
+    settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
+    edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
 };
-function createButton(mode, label, name, symbol, top, left, height, width) {
-    var tagname = "button";
-    var Tracker = function (down, x, y) { };
-    var TrackerUp = function () { };
-    var TrackerDown = function () { };
-    var OnInput = function () { };
-    switch (mode) {
-        case "button":
-            {
-                TrackerUp = function () {
-                    buttonUp(symbol);
-                };
-                TrackerDown = function () {
-                    buttonDown(symbol);
-                };
-            }
-            break;
-        case "stick":
-            {
-                Tracker = function (down, x, y) {
-                    // log(`${x}, ${y}`);
-                    if (down) {
-                        x = 2 * x - 1;
-                        y = -(2 * y - 1);
-                        x *= 1.5;
-                        y *= 1.5;
-                        var d = Math.sqrt(x * x + y * y);
-                        if (d > 1) {
-                            x /= d;
-                            y /= d;
-                            d = 1;
-                        }
-                    }
-                    else {
-                        x = 0;
-                        y = 0;
-                    }
-                    command("set ".concat(name, "x ").concat(x, " ").concat(name, "y ").concat(y));
-                };
-            }
-            break;
-        case "trigger":
-            {
-                Tracker = function (down, x, y) {
-                    if (down) {
-                        y = 1.5 * y;
-                        if (y > 1) {
-                            y = 1;
-                        }
-                    }
-                    else {
-                        y = 0;
-                    }
-                    command("set ".concat(name, " ").concat(y));
-                };
-            }
-            break;
-        case "fullscreen":
-            {
-                TrackerDown = function () {
-                    toggleFullScreen();
-                };
-            }
-            break;
-        case "turbo":
-            {
-                TrackerDown = function () {
-                    toggleButtonRepeat(symbol[0] + ":");
-                };
-            }
-            break;
-        case "macrobar":
-            {
-                tagname = "input";
-                OnInput = function () {
-                    var val = button.value.trim();
-                    macroSteps = val.split(/\s+/).filter(function (s) { return s && s !== " "; });
-                    macroStr = val;
-                };
-            }
-            break;
-        case "macroplay":
-            {
-                TrackerDown = function () {
-                    if (macroTime === null) {
-                        if (macroStr !== "") {
-                            macroIndex = 0;
-                            macroDown = false;
-                            macroTime = setInterval(macroLoop, 100);
-                        }
-                    }
-                    else {
-                        clearInterval(macroTime);
-                        if (macroDown) {
-                            macroLoop();
-                        }
-                        macroTime = null;
-                    }
-                    updateButtons();
-                };
-            }
-            break;
-        case "latency":
-            {
-            }
-            break;
-    }
-    var button = document.createElement(tagname);
-    button.classList.add("button");
-    button.classList.add("button-".concat(mode));
-    button.textContent = label;
-    button.style.top = "".concat(top, "px");
-    button.style.left = "".concat(left, "px");
-    button.style.height = "".concat(height, "px");
-    button.style.width = "".concat(width, "px");
-    button.style.fontSize = "".concat(height * 0.5, "px");
-    if (mode == "latency") {
-        button.style.fontSize = "".concat(height * 0.3, "px");
-    }
-    if (button instanceof HTMLButtonElement) {
-        var oldDown_1 = false;
-        var TrackerRawPos_1 = function (down, x, y) {
-            if (down != oldDown_1) {
-                if (down) {
-                    button.classList.add("button-down");
-                    TrackerDown();
-                }
-                else {
-                    button.classList.remove("button-down");
-                    TrackerUp();
-                }
-                oldDown_1 = down;
-            }
-            Tracker(down, (x - left) / width, (y - top) / height);
-        };
-        var mouseMoveTracker_1 = function (ev) {
-            TrackerRawPos_1(true, ev.clientX, ev.clientY);
-            ev.preventDefault();
-            ev.stopPropagation();
-        };
-        var mouseUpTracker_1 = function (ev) {
-            TrackerRawPos_1(false, ev.clientX, ev.clientY);
-            window.removeEventListener("mousemove", mouseMoveTracker_1);
-            window.removeEventListener("mouseup", mouseUpTracker_1);
-            ev.preventDefault();
-            ev.stopPropagation();
-        };
-        var touchTracker = function (ev) {
-            if (ev.targetTouches.length == 0) {
-                TrackerRawPos_1(false, 0, 0);
-            }
-            else {
-                var x = 0;
-                var y = 0;
-                var n = 0;
-                for (var i = 0; i < ev.targetTouches.length; i++) {
-                    var touch = ev.targetTouches[i];
-                    x += touch.clientX;
-                    y += touch.clientY;
-                    n += 1;
-                }
-                TrackerRawPos_1(true, x / n, y / n);
-            }
-            ev.preventDefault();
-            ev.stopPropagation();
-        };
-        button.addEventListener("mousedown", function (ev) {
-            TrackerRawPos_1(true, ev.clientX, ev.clientY);
-            window.addEventListener("mousemove", mouseMoveTracker_1);
-            window.addEventListener("mouseup", mouseUpTracker_1);
-            ev.preventDefault();
-            ev.stopPropagation();
-        });
-        button.addEventListener("touchstart", touchTracker);
-        button.addEventListener("touchmove", touchTracker);
-        button.addEventListener("touchend", touchTracker);
-    }
-    if (button instanceof HTMLInputElement) {
-        button.addEventListener("input", OnInput, true);
-    }
-    document.body.appendChild(button);
-    return button;
-}
-function createGridLine(left, top, height, width) {
-    var gridline = document.createElement("span");
-    gridline.classList.add("gridline");
-    gridline.style.top = "".concat(top, "px");
-    gridline.style.left = "".concat(left, "px");
-    gridline.style.height = "".concat(height, "px");
-    gridline.style.width = "".concat(width, "px");
-    document.body.appendChild(gridline);
-    return gridline;
-}
-var oldViberatePower = 0;
-var oldViberateCount = 0;
-function vibration() {
-    var a = [];
-    if (peakVibratePower == oldViberatePower) {
-        if (peakVibratePower == 0) {
-            peakVibratePower = vibratePower;
-            return;
-        }
-        if (oldViberateCount < 10) {
-            // 10*30=300ms
-            oldViberateCount += 1;
-            peakVibratePower = vibratePower;
-            return;
-        }
-    }
-    var minunit = 5;
-    var tot = 100;
-    var totOn = 0;
-    var totOff = 0;
-    var fixedPower = 1.0 - (1.0 - peakVibratePower) * 0.7;
-    if (fixedPower >= 1) {
-        a.push(tot);
-    }
-    else if (fixedPower <= 0) {
-        // pass
-    }
-    else {
-        while (totOn + totOff < tot) {
-            if (fixedPower > 0.5) {
-                totOff += minunit;
-                var on = Math.floor((totOff * fixedPower) / (1 - fixedPower) - totOn + 0.5);
-                a.push(on);
-                a.push(minunit);
-                totOn += on;
-            }
-            else {
-                totOn += minunit;
-                var off = Math.floor((totOn * (1 - fixedPower)) / fixedPower - totOff + 0.5);
-                a.push(minunit);
-                a.push(off);
-                totOff += off;
-            }
-        }
-    }
-    // log(`peak: ${peakVibratePower} a: ${a}`);
-    navigator === null || navigator === void 0 ? void 0 : navigator.vibrate(a);
-    oldViberatePower = peakVibratePower;
-    oldViberateCount = 0;
-}
-setInterval(vibration, 10);
-var buttonmap = [
-    "                                                                                ",
-    "  LT                                  GU                                    RT  ",
-    "              LS                                            Y:                  ",
-    "                                                                                ",
-    "  LB              L.                                    X:      B:          RB  ",
-    "                              BA      MS      ST                                ",
-    "                                                            A:                  ",
-    "                                                                                ",
-    "                          DU                          RS                        ",
-    "                                                                    Y~          ",
-    "                      DL      DR                  R.                            ",
-    "                                                                X~      B~      ",
-    "                          DD                                                    ",
-    "                                                                    A~          ",
-    "                                                                                ",
-    "                                                                                ",
-    "                          IN                      MA                        []  ",
-    "                                                                                ",
-];
-function parseButtonTable(table) {
-    var ret = {};
-    for (var _i = 0, table_1 = table; _i < table_1.length; _i++) {
-        var line = table_1[_i];
-        var symbol = line[0], label = line[1], name_1 = line[2], mode = line[3], size = line[4];
-        ret[symbol] = { label: label, name: name_1, mode: mode, size: size };
-    }
-    return ret;
-}
-var buttonTable = parseButtonTable([
-    // [Symbol, Label, Name, Type, Size]
-    ["A:", "A", "A", "button", 3],
-    ["B:", "B", "B", "button", 3],
-    ["X:", "X", "X", "button", 3],
-    ["Y:", "Y", "Y", "button", 3],
-    ["LS", "LS", "LS", "button", 3],
-    ["RS", "RS", "RS", "button", 3],
-    ["LB", "LB", "LB", "button", 3],
-    ["RB", "RB", "RB", "button", 3],
-    ["DU", "↑", "up", "button", 3],
-    ["DD", "↓", "down", "button", 3],
-    ["DL", "←", "left", "button", 3],
-    ["DR", "→", "right", "button", 3],
-    ["ST", "☰", "start", "button", 3],
-    ["BA", "❐", "back", "button", 3],
-    ["GU", "⭙", "guide", "button", 3],
-    ["L.", "L", "LS", "stick", 5],
-    ["R.", "R", "RS", "stick", 5],
-    ["LT", "LT", "LT", "trigger", 3],
-    ["RT", "RT", "RT", "trigger", 3],
-    ["[]", "⛶", "", "fullscreen", 3],
-    ["A~", "A", "A", "turbo", 3],
-    ["B~", "B", "B", "turbo", 3],
-    ["X~", "X", "X", "turbo", 3],
-    ["Y~", "Y", "Y", "turbo", 3],
-    ["IN", "", "", "macrobar", 3],
-    ["MA", "▶", "", "macroplay", 3],
-    ["MS", "⏲", "", "latency", 3],
-]);
-var buttonNamed = {};
-function reload() {
-    if (document.activeElement instanceof HTMLInputElement) {
-        // Don't reload while typing
-        return;
-    }
-    document.querySelectorAll(".button").forEach(function (element) {
-        element.remove();
-    });
-    document.querySelectorAll(".gridline").forEach(function (element) {
-        element.remove();
-    });
-    var vw = document.body.clientWidth;
-    var vh = document.body.clientHeight;
-    var mapHeight = buttonmap.length;
-    var mapWidth = buttonmap[0].length / 2;
-    var buttonHeight = vw / mapWidth;
-    var buttonWidth = vh / mapHeight;
-    var buttonA = Math.min(buttonHeight, buttonWidth);
-    var buttonXoffset = (vw - buttonA * mapWidth) / 2;
-    var buttonYoffset = (vh - buttonA * mapHeight) / 2;
-    // lines
-    for (var i = 0; i <= mapHeight; i++) {
-        createGridLine(buttonXoffset, buttonYoffset + i * buttonA, 0, mapWidth * buttonA);
-    }
-    for (var j = 0; j <= mapWidth; j++) {
-        createGridLine(buttonXoffset + j * buttonA, buttonYoffset, mapHeight * buttonA, 0);
-    }
-    // buttons
-    for (var i = 0; i < buttonmap.length; i++) {
-        for (var j = 0; j < buttonmap[i].length / 2; j++) {
-            var symbol = buttonmap[i].slice(j * 2, j * 2 + 2);
-            if (symbol == "  ") {
-                continue;
-            }
-            var buttonX = buttonXoffset + j * buttonA + buttonA / 2;
-            var buttonY = buttonYoffset + i * buttonA + buttonA / 2;
-            var attr = buttonTable[symbol];
-            if (attr) {
-                buttonNamed[symbol] = createButton(attr.mode, attr.label, attr.name, symbol, buttonY - (attr.size * buttonA) / 2, buttonX - (attr.size * buttonA) / 2, attr.size * buttonA, attr.mode == "macrobar"
-                    ? attr.size * 4 * buttonA
-                    : attr.size * buttonA);
-                if (attr.mode == "button" || attr.mode == "trigger") {
-                    textToSymbol[symbol.toUpperCase()] = symbol;
-                    textToSymbol[attr.label.toUpperCase()] = symbol;
-                }
-            }
-        }
-    }
-    textToSymbol["UP"] = "DU";
-    textToSymbol["DOWN"] = "DD";
-    textToSymbol["LEFT"] = "DL";
-    textToSymbol["RIGHT"] = "DR";
-    textToSymbol["^"] = "DU";
-    textToSymbol["v"] = "DD";
-    textToSymbol["<"] = "DL";
-    textToSymbol[">"] = "DR";
-    updateButtons();
-}
-function wsConnect() {
-    var cwd = window.location.host + window.location.pathname;
-    var nextWebsocket = new WebSocket("ws://".concat(cwd, "websocket"));
-    nextWebsocket.addEventListener("open", function (event) {
-        mainWebsocket = nextWebsocket;
-        updateButtons();
-    });
-    nextWebsocket.addEventListener("error", function (event) {
-        console.error(event);
-        mainWebsocket = null;
-        updateButtons();
-    });
-    nextWebsocket.addEventListener("close", function (event) {
-        console.error("mainWebsocket closed");
-        mainWebsocket = null;
-        updateButtons();
-        setTimeout(wsConnect, 5000);
-    });
-    nextWebsocket.addEventListener("message", function (event) {
-        var _a, _b;
-        var msg = event.data;
-        if (typeof msg == "string") {
-            var args = msg.split(" ");
-            if (args[0] == "set") {
-                for (var i = 1; i + 1 < args.length; i++) {
-                    state_out[args[i]] = Number(args[i + 1]);
-                }
-                var large_motor = (_a = state_out["large_motor"]) !== null && _a !== void 0 ? _a : 0;
-                var small_motor = (_b = state_out["small_motor"]) !== null && _b !== void 0 ? _b : 0;
-                var vibratePower_1 = Math.max(large_motor, small_motor);
-                if (vibratePower_1 > peakVibratePower) {
-                    peakVibratePower = vibratePower_1;
-                }
-            }
-            else if (args[0] == "pong") {
-                if (latencyTestCallback !== null) {
-                    latencyTestCallback(null);
-                }
-            }
-            else {
-                console.warn("Unknown command ".concat(msg));
-            }
-        }
-    });
-}
-function toggleButtonRepeat(symbol) {
-    var buttonState = turboButtons[symbol];
-    if (buttonState.timer !== null) {
-        clearTimeout(buttonState.timer);
-        buttonState.timer = null;
-        buttonUp(symbol);
-    }
-    buttonState.enabled = !buttonState.enabled;
-    if (buttonState.enabled) {
-        turboButtonDown(symbol);
-    }
-    updateButtons();
-}
-function buttonDown(symbol) {
-    var attr = buttonTable[symbol];
-    if (attr) {
-        if (attr.mode == "button" || attr.mode == "trigger") {
-            command("set ".concat(attr.name, " 1"));
-        }
-        else {
-            console.warn("Unable to down button ".concat(symbol));
-        }
-        buttonPressed[symbol] = true;
-        updateButtons();
-    }
-    else {
-        console.warn("Unknown button ".concat(symbol));
-    }
-}
-function buttonUp(symbol) {
-    var attr = buttonTable[symbol];
-    if (attr) {
-        if (attr.mode == "button" || attr.mode == "trigger") {
-            command("set ".concat(attr.name, " 0"));
-        }
-        else {
-            console.warn("Unable to down button ".concat(symbol));
-        }
-        buttonPressed[symbol] = false;
-        updateButtons();
-    }
-    else {
-        console.warn("Unknown button ".concat(symbol));
-    }
-}
-function turboButtonDown(symbol) {
-    buttonDown(symbol);
-    var buttonState = turboButtons[symbol];
-    buttonState.timer = setTimeout(function () { return turboButtonUp(symbol); }, 100);
-}
-function turboButtonUp(symbol) {
-    buttonUp(symbol);
-    var buttonState = turboButtons[symbol];
-    buttonState.timer = setTimeout(function () { return turboButtonDown(symbol); }, 100);
-}
-function macroLoop() {
-    if (macroIndex >= macroSteps.length) {
-        macroIndex = 0;
-    }
-    var step = macroSteps[macroIndex];
-    step = step.toUpperCase();
-    if (Object.prototype.hasOwnProperty.call(textToSymbol, step)) {
-        step = textToSymbol[step];
-    }
-    if (macroDown) {
-        if (step !== ".") {
-            buttonUp(step);
-        }
-        macroIndex++;
-        macroDown = false;
-    }
-    else {
-        if (step !== ".") {
-            buttonDown(step);
-        }
-        macroDown = true;
-    }
-}
-function checkLatency() {
-    if (mainWebsocket === null) {
-        latencyTestResults = [];
-        updateButtons();
-        setTimeout(checkLatency, latencyTestWait);
-        return;
-    }
-    mainWebsocket.send("ping");
-    var latencyTestStart = new Date().getTime();
-    new Promise(function (resolve, reject) {
-        latencyTestCallback = resolve;
-        setTimeout(reject, latencyTestTimeout);
-    })
-        .then(function () {
-        latencyTestCallback = null;
-        var latencyTestStop = new Date().getTime();
-        latencyTestResults.push(latencyTestStop - latencyTestStart);
-        if (latencyTestResults.length > latencyTestResultMax) {
-            latencyTestResults.shift();
-        }
-        updateButtons();
-        setTimeout(checkLatency, latencyTestWait);
-    })
-        .catch(function () {
-        latencyTestCallback = null;
-        latencyTestResults = [];
-        updateButtons();
-        setTimeout(checkLatency, latencyTestWait);
-    });
-}
-function updateButtons() {
-    var bMS = buttonNamed["MS"];
-    if (bMS instanceof HTMLButtonElement) {
-        bMS.classList.remove("button-excellent");
-        bMS.classList.remove("button-good");
-        bMS.classList.remove("button-normal");
-        bMS.classList.remove("button-bad");
-        bMS.classList.remove("button-uncertain");
-        bMS.classList.remove("button-disconnected");
-        if (mainWebsocket === null) {
-            bMS.textContent = "!";
-            bMS.classList.add("button-disconnected");
-        }
-        else {
-            if (latencyTestResults.length == 0) {
-                bMS.textContent = "?";
-                bMS.classList.add("button-uncertain");
-            }
-            else {
-                var sum = 0;
-                for (var _i = 0, latencyTestResults_1 = latencyTestResults; _i < latencyTestResults_1.length; _i++) {
-                    var v = latencyTestResults_1[_i];
-                    sum += v;
-                }
-                sum = Math.floor(sum / latencyTestResults.length);
-                bMS.textContent = "".concat(sum, "ms");
-                if (sum < 50) {
-                    bMS.classList.add("button-excellent");
-                }
-                else if (sum < 100) {
-                    bMS.classList.add("button-good");
-                }
-                else if (sum < 200) {
-                    bMS.classList.add("button-normal");
-                }
-                else {
-                    bMS.classList.add("button-bad");
-                }
-            }
-        }
-    }
-    Object.keys(buttonNamed).forEach(function (sym) {
-        var button = buttonNamed[sym];
-        if (sym[1] == "~") {
-            // turbo button
-            var tsym = sym[0] + ":";
-            if (turboButtons[tsym].enabled) {
-                button.classList.add("button-locked");
-            }
-            else {
-                button.classList.remove("button-locked");
-            }
-        }
-        if (buttonPressed[sym]) {
-            button.classList.add("button-pressed");
-        }
-        else {
-            button.classList.remove("button-pressed");
-        }
-    });
-    var bMA = buttonNamed["MA"];
-    var bIN = buttonNamed["IN"];
-    if (bIN instanceof HTMLInputElement) {
-        if (macroTime === null) {
-            bMA.classList.remove("button-locked");
-            bIN.disabled = false;
-        }
-        else {
-            bMA.classList.add("button-locked");
-            bIN.disabled = true;
-        }
-        bIN.value = macroStr;
-    }
-}
-window.addEventListener("load", function () {
-    reload();
-    vibration();
-    wsConnect();
-    checkLatency();
-});
-window.addEventListener("resize", reload);
-window.addEventListener("contextmenu", function (event) {
-    event.stopPropagation();
-    event.preventDefault();
-});
 var nosleep = new NoSleep();
 function toggleFullScreen() {
     var _a, _b;
     if (!document.fullscreenElement) {
         (_a = document.documentElement) === null || _a === void 0 ? void 0 : _a.requestFullscreen();
         try {
+            // @ts-ignore
             (_b = screen === null || screen === void 0 ? void 0 : screen.orientation) === null || _b === void 0 ? void 0 : _b.lock("landscape");
         }
         catch (e) {
             console.warn(e);
         }
-        nosleep.enable();
+        try {
+            nosleep.enable();
+        }
+        catch (e) {
+            console.warn(e);
+        }
     }
     else if (document.exitFullscreen) {
         document.exitFullscreen();
-        nosleep.disable();
+        try {
+            nosleep.disable();
+        }
+        catch (e) {
+            console.warn(e);
+        }
     }
 }
+function defaultMode(def, symbol) {
+    switch (def.shape) {
+        case "button":
+            return { mode: "press", name: symbol };
+        case "stick":
+            return { mode: "stick", name: symbol };
+        case "trigger":
+            return { mode: "trigger", name: symbol };
+        default:
+            throw new Error("Unable to derive mode for ".concat(symbol));
+    }
+}
+function addTouchListeners(button, touchCallback) {
+    // mouse
+    function onMouseMove(ev) {
+        touchCallback(true, ev.clientX, ev.clientY);
+        ev.stopPropagation();
+        ev.preventDefault();
+    }
+    function onMouseUp(ev) {
+        touchCallback(false, ev.clientX, ev.clientY);
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+        ev.stopPropagation();
+        ev.preventDefault();
+    }
+    function onMouseDown(ev) {
+        touchCallback(true, ev.clientX, ev.clientY);
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+        ev.stopPropagation();
+        ev.preventDefault();
+    }
+    button.addEventListener("mousedown", onMouseDown);
+    // Touch
+    function onTouchChange(ev) {
+        if (ev.targetTouches.length === 0) {
+            button.classList.remove("button-touchdown");
+            touchCallback(false, 0, 0);
+        }
+        else {
+            button.classList.add("button-touchdown");
+            var x = 0, y = 0, n = ev.targetTouches.length;
+            for (var i = 0; i < n; i++) {
+                var touch = ev.targetTouches.item(i);
+                if (touch !== null) {
+                    x += touch.clientX;
+                    y += touch.clientY;
+                }
+            }
+            touchCallback(true, x / n, y / n);
+        }
+        ev.stopPropagation();
+        ev.preventDefault();
+    }
+    button.addEventListener("touchstart", onTouchChange);
+    button.addEventListener("touchmove", onTouchChange);
+    button.addEventListener("touchend", onTouchChange);
+    button.addEventListener("touchcancel", onTouchChange);
+    // revert
+    function removeTouchListeners() {
+        button.removeEventListener("mousedown", onMouseDown);
+        button.removeEventListener("mouseup", onMouseUp);
+        button.removeEventListener("mousemove", onMouseMove);
+        button.removeEventListener("touchstart", onTouchChange);
+        button.removeEventListener("touchmove", onTouchChange);
+        button.removeEventListener("touchend", onTouchChange);
+        button.removeEventListener("touchcancel", onTouchChange);
+    }
+    return removeTouchListeners;
+}
+var VGamepad = /** @class */ (function () {
+    function VGamepad(parent, serverLink) {
+        this.state = {};
+        this.state_out = {};
+        this.mode = "ds4";
+        this.editMode = false;
+        this.element = document.createElement("div");
+        this.element.classList.add("gamepad");
+        this.buttons = {};
+        this.serverLink = serverLink;
+        this.websocket = null;
+        this.websocketOpening = false;
+        parent.appendChild(this.element);
+        this.connect();
+    }
+    VGamepad.prototype.updateButtons = function () {
+        for (var _i = 0, _a = Object.values(this.buttons); _i < _a.length; _i++) {
+            var btn = _a[_i];
+            btn.posToRealPos();
+            btn.updateButton();
+        }
+    };
+    VGamepad.prototype.setEditMode = function (editMode) {
+        this.editMode = editMode;
+        if (editMode) {
+            this.element.classList.add("gamepad-edit");
+        }
+        else {
+            this.element.classList.remove("gamepad-edit");
+        }
+        this.updateButtons();
+    };
+    VGamepad.prototype.savePosTable = function () {
+        var totalPos = {};
+        for (var _i = 0, _a = Object.entries(this.buttons); _i < _a.length; _i++) {
+            var _b = _a[_i], symbol = _b[0], btn = _b[1];
+            totalPos[symbol] = btn.pos;
+        }
+        localStorage.setItem("buttonPosTable", JSON.stringify(totalPos));
+    };
+    VGamepad.prototype.setState = function (name, value) {
+        if (this.state[name] != value) {
+            if (this.websocket !== null && !this.websocketOpening) {
+                this.websocket.send("set ".concat(name, " ").concat(value));
+            }
+            this.state[name] = value;
+        }
+    };
+    VGamepad.prototype.connect = function () {
+        var _this = this;
+        this.websocket = new WebSocket(this.serverLink);
+        this.websocketOpening = true;
+        this.websocket.addEventListener("open", function () {
+            _this.websocketOpening = false;
+            _this.wsOpen();
+        });
+        this.websocket.addEventListener("message", function (ev) {
+            _this.wsMessage(ev.data);
+        });
+        this.websocket.addEventListener("error", function (ev) {
+            console.error(ev);
+        });
+        this.websocket.addEventListener("close", function () {
+            if (_this.websocket === null) {
+                console.error("Websocket not ready");
+                return;
+            }
+            _this.websocket = null;
+            _this.websocketOpening = false;
+            _this.wsClose();
+            // retry
+            console.log("close resche");
+            setTimeout(function () {
+                _this.connect();
+            }, 1000);
+        });
+    };
+    VGamepad.prototype.wsOpen = function () {
+        if (this.websocket === null || this.websocketOpening) {
+            console.error("Websocket not ready");
+            return;
+        }
+        this.websocket.send("mode ".concat(this.mode));
+    };
+    VGamepad.prototype.wsMessage = function (msg) {
+        var args = msg.split(" ");
+        if (args[0] === "set") {
+            for (var i = 1; i + 1 < args.length; i += 2) {
+                this.state_out[args[i]] = parseFloat(args[i + 1]);
+            }
+        }
+    };
+    VGamepad.prototype.wsClose = function () { };
+    return VGamepad;
+}());
+var VGamepadButton = /** @class */ (function () {
+    function VGamepadButton(gamepad, symbol, def, pos) {
+        var _a;
+        this.gamepad = gamepad;
+        this.symbol = symbol;
+        this.def = def;
+        this.pos = pos; // 相对位置(左边界碰到窗口左边界为0，右边界碰到窗口右边界为100)
+        this.realPos = { x: 0, y: 0, width: 0, height: 0, offsetX: 0, offsetY: 0 }; // 屏幕上的实际位置和大小
+        this.stickDrag = { offsetX: 0, offsetY: 0 };
+        this.mode = (_a = def.mode) !== null && _a !== void 0 ? _a : defaultMode(def, symbol);
+        this.editMode = {
+            offsetX: 0,
+            offsetY: 0,
+            previousTime: 0,
+            previousX: 0,
+            previousY: 0,
+            moved: false,
+        };
+        this.prevDown = false;
+        this.element = document.createElement("button");
+        this.element.textContent = this.def.label;
+        this.element.classList.add("button", "button-".concat(this.symbol), "button-".concat(this.def.shape));
+        addTouchListeners(this.element, this.touchCallback.bind(this));
+        this.elementShade = null;
+        if (this.def.shape == "stick" || this.def.shape == "trigger") {
+            this.elementShade = document.createElement("div");
+            this.elementShade.classList.add("buttonshade", "buttonshade-".concat(this.symbol), "buttonshade-".concat(this.def.shape));
+            this.gamepad.element.appendChild(this.elementShade);
+        }
+        this.gamepad.element.appendChild(this.element);
+        this.posToRealPos();
+        this.updateButton();
+    }
+    VGamepadButton.prototype.touchCallbackEditmode = function (down, clientX, clientY) {
+        if (this.prevDown) {
+            if (down) {
+                var dragX = clientX - this.editMode.previousX;
+                var dragY = clientY - this.editMode.previousY;
+                if (Math.abs(dragX) > 5 || Math.abs(dragY) > 5) {
+                    this.editMode.moved = true;
+                }
+                this.realPos.x = clientX - this.editMode.offsetX;
+                this.realPos.y = clientY - this.editMode.offsetY;
+            }
+            else {
+                this.realPosToPos();
+                if (this.pos.x < 0) {
+                    this.pos.x = 0;
+                }
+                if (this.pos.x > 100) {
+                    this.pos.x = 100;
+                }
+                if (this.pos.y < 0) {
+                    this.pos.y = 0;
+                }
+                if (this.pos.y > 100) {
+                    this.pos.y = 100;
+                }
+                this.posToRealPos();
+                var currentTime = new Date().getTime();
+                if (currentTime - this.editMode.previousTime > 500) {
+                    this.editMode.moved = true;
+                }
+                if (!this.editMode.moved) {
+                    if (this.mode.mode == "edit") {
+                        this.gamepad.setEditMode(false);
+                        this.gamepad.savePosTable();
+                    }
+                    else {
+                        this.pos.show = !this.pos.show;
+                    }
+                }
+            }
+            this.updateButton();
+        }
+        else {
+            if (down) {
+                this.editMode = {
+                    offsetX: clientX - this.realPos.x,
+                    offsetY: clientY - this.realPos.y,
+                    previousTime: new Date().getTime(),
+                    previousX: clientX,
+                    previousY: clientY,
+                    moved: false,
+                };
+            }
+            this.updateButton();
+        }
+    };
+    VGamepadButton.prototype.touchCallback = function (down, clientX, clientY) {
+        var _a;
+        if (this.gamepad.editMode) {
+            this.touchCallbackEditmode(down, clientX, clientY);
+            this.prevDown = down;
+            return;
+        }
+        if (down) {
+            this.element.classList.add("button-touchdown");
+        }
+        else {
+            this.element.classList.remove("button-touchdown");
+        }
+        switch (this.mode.mode) {
+            case "press":
+                this.gamepad.setState(this.mode.name, down ? 1 : 0);
+                break;
+            case "trigger":
+                {
+                    var sy = 0;
+                    if (down) {
+                        if (!this.prevDown) {
+                            // this.realPos.x for fix position
+                            this.stickDrag.offsetX = clientX;
+                            this.stickDrag.offsetY = clientY;
+                        }
+                        sy = ((clientY - this.stickDrag.offsetY) / this.realPos.height) * 2;
+                        if (sy > 1) {
+                            sy = 1;
+                        }
+                        if (sy < 0) {
+                            sy = 0;
+                        }
+                    }
+                    this.gamepad.setState(this.mode.name, sy);
+                    this.realPos.offsetY = sy * 0.5 * this.realPos.height;
+                    this.updateButton();
+                }
+                break;
+            case "stick":
+                {
+                    var sx = 0, sy = 0;
+                    if (down) {
+                        if (!this.prevDown) {
+                            // this.realPos.x for fix position
+                            this.stickDrag.offsetX = clientX;
+                            this.stickDrag.offsetY = clientY;
+                        }
+                        sx = ((clientX - this.stickDrag.offsetX) / this.realPos.width) * 2;
+                        sy =
+                            (-(clientY - this.stickDrag.offsetY) / this.realPos.height) * 2;
+                        var d = Math.sqrt(sx * sx + sy * sy);
+                        if (d > 1) {
+                            sx /= d;
+                            sy /= d;
+                        }
+                    }
+                    this.gamepad.setState("".concat(this.mode.name, "x"), down ? sx : 0);
+                    this.gamepad.setState("".concat(this.mode.name, "y"), down ? sy : 0);
+                    this.realPos.offsetX = sx * 0.5 * this.realPos.width;
+                    this.realPos.offsetY = sy * -0.5 * this.realPos.height;
+                    this.updateButton();
+                }
+                break;
+            case "fullscreen":
+                if (down && !this.prevDown) {
+                    toggleFullScreen();
+                }
+                break;
+            case "edit":
+                if (down && !this.prevDown) {
+                    this.gamepad.setEditMode(true);
+                    this.editMode = {
+                        offsetX: clientX - this.realPos.x,
+                        offsetY: clientY - this.realPos.y,
+                        previousTime: new Date().getTime(),
+                        previousX: clientX,
+                        previousY: clientY,
+                        moved: true, // 防止点击后立即触发放开导致退出编辑模式
+                    };
+                }
+                break;
+            case "macro":
+                // if (this.gamepad.recordState == 'select') {
+                // if (down && !this.prevDown) {
+                //   recordTarget=this.def.mode.id
+                //   record
+                // }
+                // } else if (...recordState == 'none') {
+                //   sendMacro(this.mode.id);
+                break;
+            case "record":
+                // if (down &&!this.prevDown) {
+                // } else if (...recordState == 'none') {
+                // select
+                // if (this.gamepad.recordState == 'select') {
+                // }
+                break;
+            case "turbo":
+                // if (down &&!this.prevDown) {
+                //   sendMacro(this.mode.id);
+                //   gamepad.turboMode
+                // }else{
+                // turbomode...
+                //}
+                break;
+            case "speed":
+                // if (down &&!this.prevDown) {
+                //   sendMacro(this.mode.id);
+                //   gamepad.macroSpeed
+                // }
+                break;
+            case "status":
+                // No need to interact
+                break;
+            case "settings":
+                if (down && !this.prevDown) {
+                    prompt("copy settings", (_a = localStorage.getItem("buttonPosTable")) !== null && _a !== void 0 ? _a : "{}");
+                    if (confirm("Reset settings?")) {
+                        localStorage.clear();
+                        window.location.reload();
+                    }
+                }
+                break;
+        }
+        this.prevDown = down;
+    };
+    VGamepadButton.prototype.posToRealPos = function () {
+        var height = this.gamepad.element.clientHeight;
+        var width = this.gamepad.element.clientWidth;
+        // assume height > width
+        var scale = (Math.min(height, width) * this.pos.scale) / 100;
+        var x = (this.pos.x * (width - scale)) / 100;
+        var y = (this.pos.y * (height - scale)) / 100;
+        this.realPos.x = x;
+        this.realPos.y = y;
+        this.realPos.width = scale;
+        this.realPos.height = scale;
+    };
+    VGamepadButton.prototype.realPosToPos = function () {
+        var height = this.gamepad.element.clientHeight;
+        var width = this.gamepad.element.clientWidth;
+        // assume height > width
+        var scale = (Math.min(height, width) * this.pos.scale) / 100;
+        var x = (this.realPos.x * 100) / (width - scale);
+        var y = (this.realPos.y * 100) / (height - scale);
+        this.pos.x = x;
+        this.pos.y = y;
+    };
+    VGamepadButton.prototype.updateButton = function () {
+        this.element.style.left = "".concat(this.realPos.x + this.realPos.offsetX, "px");
+        this.element.style.top = "".concat(this.realPos.y + this.realPos.offsetY, "px");
+        this.element.style.width = "".concat(this.realPos.width, "px");
+        this.element.style.height = "".concat(this.realPos.height, "px");
+        this.element.style.fontSize = "".concat(this.realPos.height * 0.5, "px");
+        if (!this.pos.show) {
+            this.element.classList.add("button-hide");
+        }
+        else {
+            this.element.classList.remove("button-hide");
+        }
+        if (this.elementShade !== null) {
+            this.elementShade.style.left = "".concat(this.realPos.x, "px");
+            this.elementShade.style.top = "".concat(this.realPos.y, "px");
+            this.elementShade.style.width = "".concat(this.realPos.width, "px");
+            this.elementShade.style.height = "".concat(this.realPos.height, "px");
+            if (!this.pos.show) {
+                this.elementShade.classList.add("button-hide");
+            }
+            else {
+                this.elementShade.classList.remove("button-hide");
+            }
+        }
+    };
+    return VGamepadButton;
+}());
+var defaultPosTable = {
+    LB: { x: 10.448151034313028, y: 26.967594358656143, scale: 20, show: true },
+    RB: { x: 89.75288216002276, y: 20.48611111111111, scale: 20, show: true },
+    LT: { x: 1.9659750517987205, y: 74.76852072609796, scale: 20, show: false },
+    RT: { x: 10.05092821629621, y: 98.49537346098158, scale: 20, show: false },
+    LS: { x: 25.046210008783582, y: 19.742057310841094, scale: 20, show: true },
+    up: { x: 26.160016374861247, y: 55.45634744028566, scale: 20, show: true },
+    down: { x: 26.04363831208012, y: 88.6573968110261, scale: 20, show: true },
+    left: { x: 19.646652660405252, y: 71.89153085940724, scale: 20, show: true },
+    right: { x: 32.638172557906465, y: 72.33795236658165, scale: 20, show: true },
+    RS: { x: 62.30258743381299, y: 62.516539689725036, scale: 20, show: true },
+    A: { x: 72.96207905613684, y: 39.533730158730194, scale: 20, show: true },
+    B: { x: 79.04724703990307, y: 24.239411808195566, scale: 20, show: true },
+    X: { x: 67.44732718216946, y: 24.999992935745812, scale: 20, show: true },
+    Y: { x: 73.01095713556357, y: 9.259263674418131, scale: 20, show: true },
+    back: { x: 60.16938081538901, y: 2.5132292792910564, scale: 20, show: true },
+    start: { x: 37.01578569925944, y: 2.2652120817275287, scale: 20, show: true },
+    guide: { x: 48.66870774800849, y: 13.88888888888889, scale: 20, show: true },
+    LTb: { x: 14.329976765687192, y: 2.4801490168092113, scale: 20, show: true },
+    RTb: { x: 85.03412443424894, y: 0, scale: 20, show: true },
+    LSb: { x: 32.3376019343543, y: 32.77116225510048, scale: 20, show: true },
+    RSb: { x: 74.44554161671081, y: 72.13955026455025, scale: 20, show: true },
+    M1: { x: 88.69142508865353, y: 98.26388888888889, scale: 20, show: false },
+    M2: { x: 78.3247338679961, y: 98.2638782925076, scale: 20, show: false },
+    M3: { x: 97.32023313018686, y: 44.19642857142857, scale: 20, show: false },
+    M4: { x: 98.19819530416518, y: 70.43650970257146, scale: 20, show: false },
+    fullscreen: { x: 100, y: 100, scale: 20, show: true },
+    record: {
+        x: 43.31258282981342,
+        y: 75.97552203627492,
+        scale: 20,
+        show: false,
+    },
+    turbo: {
+        x: 52.822641867929505,
+        y: 75.95899294293118,
+        scale: 20,
+        show: false,
+    },
+    "speed-": {
+        x: 42.9872910289067,
+        y: 98.61108991834853,
+        scale: 20,
+        show: false,
+    },
+    "speed+": {
+        x: 52.6317061812778,
+        y: 99.18982187906902,
+        scale: 20,
+        show: false,
+    },
+    status: {
+        x: 48.611964318465326,
+        y: 44.427910052910065,
+        scale: 20,
+        show: true,
+    },
+    settings: { x: 100, y: 0, scale: 20, show: true },
+    edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
+};
+function initGamepad() {
+    var _a, _b, _c, _d, _e, _f;
+    var wsprotocol = document.location.protocol === "https:" ? "wss" : "ws";
+    var PATH = document.location.host + document.location.pathname;
+    var vgamepad = new VGamepad(document.body, "".concat(wsprotocol, "://").concat(PATH, "websocket"));
+    // @ts-ignore
+    window.vgamepad = vgamepad;
+    var posTableString = localStorage.getItem("buttonPosTable");
+    var posTable = {};
+    var defaultPos = { x: 50, y: 50, scale: 20, show: true };
+    var posTableJson = null;
+    if (posTableString) {
+        try {
+            posTableJson = JSON.parse(posTableString);
+        }
+        catch (e) {
+            console.error(e);
+        }
+    }
+    for (var _i = 0, _g = Object.keys(buttonDefTable); _i < _g.length; _i++) {
+        var symbol = _g[_i];
+        var posTableR = posTableJson === null || posTableJson === void 0 ? void 0 : posTableJson[symbol];
+        var defaultP = (_a = defaultPosTable[symbol]) !== null && _a !== void 0 ? _a : defaultPos;
+        posTable[symbol] = {
+            x: (_b = posTableR === null || posTableR === void 0 ? void 0 : posTableR.x) !== null && _b !== void 0 ? _b : defaultP.x,
+            y: (_c = posTableR === null || posTableR === void 0 ? void 0 : posTableR.y) !== null && _c !== void 0 ? _c : defaultP.y,
+            scale: (_d = posTableR === null || posTableR === void 0 ? void 0 : posTableR.scale) !== null && _d !== void 0 ? _d : defaultP.scale,
+            show: (_e = posTableR === null || posTableR === void 0 ? void 0 : posTableR.show) !== null && _e !== void 0 ? _e : defaultP.show,
+        };
+    }
+    for (var _h = 0, _j = Object.entries(buttonDefTable); _h < _j.length; _h++) {
+        var _k = _j[_h], symbol = _k[0], def = _k[1];
+        var button = new VGamepadButton(vgamepad, symbol, def, (_f = posTable[symbol]) !== null && _f !== void 0 ? _f : defaultPos);
+        vgamepad.buttons[symbol] = button;
+    }
+    window.addEventListener("resize", function () {
+        vgamepad.updateButtons();
+    });
+}
+window.addEventListener("load", initGamepad);
