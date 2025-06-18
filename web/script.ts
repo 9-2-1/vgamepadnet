@@ -49,28 +49,28 @@ const buttonDefTable: ButtonDefTable = {
   back: { label: "❐", shape: "button" },
   start: { label: "☰", shape: "button" },
   guide: { label: "⭙", shape: "button" },
-  // easy buttons
+  // // easy buttons
   LTb: { label: "LT", shape: "button", mode: { mode: "press", name: "LT" } },
   RTb: { label: "RT", shape: "button", mode: { mode: "press", name: "RT" } },
   LSb: { label: "LS", shape: "button", mode: { mode: "press", name: "LS" } },
   RSb: { label: "RS", shape: "button", mode: { mode: "press", name: "RS" } },
-  // macro
-  M1: { label: "M1", shape: "button", mode: { mode: "macro", id: 1 } },
-  M2: { label: "M2", shape: "button", mode: { mode: "macro", id: 2 } },
-  M3: { label: "M3", shape: "button", mode: { mode: "macro", id: 3 } },
-  M4: { label: "M4", shape: "button", mode: { mode: "macro", id: 4 } },
-  // functional
-  fullscreen: { label: "⛶", shape: "button", mode: { mode: "fullscreen" } },
-  record: { label: "●", shape: "button", mode: { mode: "record" } },
-  turbo: { label: "↻", shape: "button", mode: { mode: "turbo" } },
-  "speed-": { label: "≪", shape: "button", mode: { mode: "speed", value: -1 } },
-  "speed+": { label: "≫", shape: "button", mode: { mode: "speed", value: 1 } },
+  // // macro
+  // M1: { label: "M1", shape: "button", mode: { mode: "macro", id: 1 } },
+  // M2: { label: "M2", shape: "button", mode: { mode: "macro", id: 2 } },
+  // M3: { label: "M3", shape: "button", mode: { mode: "macro", id: 3 } },
+  // M4: { label: "M4", shape: "button", mode: { mode: "macro", id: 4 } },
+  // // functional
+  // fullscreen: { label: "⛶", shape: "button", mode: { mode: "fullscreen" } },
+  // record: { label: "●", shape: "button", mode: { mode: "record" } },
+  // turbo: { label: "↻", shape: "button", mode: { mode: "turbo" } },
+  // "speed-": { label: "≪", shape: "button", mode: { mode: "speed", value: -1 } },
+  // "speed+": { label: "≫", shape: "button", mode: { mode: "speed", value: 1 } },
   status: {
-    label: "JavaScript 错误",
+    label: "未连接",
     shape: "label",
     mode: { mode: "status" },
   },
-  settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
+  // settings: { label: "⚙", shape: "button", mode: { mode: "settings" } },
   edit: { label: "✎", shape: "button", mode: { mode: "edit" } },
 };
 
@@ -88,6 +88,67 @@ const ds4Labels: Record<string, string> = {
   back: "…",
   start: "☰",
   guide: "PS",
+};
+
+const defaultPosTable: ButtonPosTable = {
+  LB: { x: 10.448151034313028, y: 26.967594358656143, scale: 20, show: true },
+  RB: { x: 89.75288216002276, y: 20.48611111111111, scale: 20, show: true },
+  LT: { x: 1.9659750517987205, y: 74.76852072609796, scale: 20, show: false },
+  RT: { x: 10.05092821629621, y: 98.49537346098158, scale: 20, show: false },
+  LS: { x: 25.046210008783582, y: 19.742057310841094, scale: 20, show: true },
+  up: { x: 26.160016374861247, y: 55.45634744028566, scale: 20, show: true },
+  down: { x: 26.04363831208012, y: 88.6573968110261, scale: 20, show: true },
+  left: { x: 19.646652660405252, y: 71.89153085940724, scale: 20, show: true },
+  right: { x: 32.638172557906465, y: 72.33795236658165, scale: 20, show: true },
+  RS: { x: 62.30258743381299, y: 62.516539689725036, scale: 20, show: true },
+  A: { x: 72.96207905613684, y: 39.533730158730194, scale: 20, show: true },
+  B: { x: 79.04724703990307, y: 24.239411808195566, scale: 20, show: true },
+  X: { x: 67.44732718216946, y: 24.999992935745812, scale: 20, show: true },
+  Y: { x: 73.01095713556357, y: 9.259263674418131, scale: 20, show: true },
+  back: { x: 60.16938081538901, y: 2.5132292792910564, scale: 20, show: true },
+  start: { x: 37.01578569925944, y: 2.2652120817275287, scale: 20, show: true },
+  guide: { x: 48.66870774800849, y: 13.88888888888889, scale: 20, show: true },
+  LTb: { x: 14.329976765687192, y: 2.4801490168092113, scale: 20, show: true },
+  RTb: { x: 85.03412443424894, y: 0, scale: 20, show: true },
+  LSb: { x: 32.3376019343543, y: 32.77116225510048, scale: 20, show: true },
+  RSb: { x: 74.44554161671081, y: 72.13955026455025, scale: 20, show: true },
+  // M1: { x: 88.69142508865353, y: 98.26388888888889, scale: 20, show: false },
+  // M2: { x: 78.3247338679961, y: 98.2638782925076, scale: 20, show: false },
+  // M3: { x: 97.32023313018686, y: 44.19642857142857, scale: 20, show: false },
+  // M4: { x: 98.19819530416518, y: 70.43650970257146, scale: 20, show: false },
+  // fullscreen: { x: 100, y: 100, scale: 20, show: true },
+  // record: {
+  //   x: 43.31258282981342,
+  //   y: 75.97552203627492,
+  //   scale: 20,
+  //   show: false,
+  // },
+  // turbo: {
+  //   x: 52.822641867929505,
+  //   y: 75.95899294293118,
+  //   scale: 20,
+  //   show: false,
+  // },
+  // "speed-": {
+  //   x: 42.9872910289067,
+  //   y: 98.61108991834853,
+  //   scale: 20,
+  //   show: false,
+  // },
+  // "speed+": {
+  //   x: 52.6317061812778,
+  //   y: 99.18982187906902,
+  //   scale: 20,
+  //   show: false,
+  // },
+  status: {
+    x: 48.611964318465326,
+    y: 44.427910052910065,
+    scale: 20,
+    show: true,
+  },
+  // settings: { x: 100, y: 0, scale: 20, show: true },
+  edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
 };
 
 class Vibration {
@@ -462,7 +523,13 @@ class VGamepadButton {
     previousY: 0,
     moved: false,
   };
-  stickDrag = { offsetX: 0, offsetY: 0 };
+  stickDrag = {
+    offsetX: 0,
+    offsetY: 0,
+    clicktime: null as number | null,
+    locktimeout: null as number | null,
+    holding: false,
+  };
   prevDown = false;
   element: HTMLButtonElement;
   elementShade: HTMLDivElement | null = null;
@@ -593,6 +660,13 @@ class VGamepadButton {
               // this.realPos.x for fix position
               this.stickDrag.offsetX = clientX;
               this.stickDrag.offsetY = clientY;
+              if (this.stickDrag.locktimeout !== null) {
+                clearTimeout(this.stickDrag.locktimeout);
+                this.stickDrag.holding = true;
+              } else {
+                this.stickDrag.clicktime = new Date().getTime();
+              }
+              // clicktime, locktime, holding
             }
             sx = ((clientX - this.stickDrag.offsetX) / this.realPos.width) * 2;
             sy =
@@ -718,67 +792,6 @@ class VGamepadButton {
     }
   }
 }
-
-const defaultPosTable: ButtonPosTable = {
-  LB: { x: 10.448151034313028, y: 26.967594358656143, scale: 20, show: true },
-  RB: { x: 89.75288216002276, y: 20.48611111111111, scale: 20, show: true },
-  LT: { x: 1.9659750517987205, y: 74.76852072609796, scale: 20, show: false },
-  RT: { x: 10.05092821629621, y: 98.49537346098158, scale: 20, show: false },
-  LS: { x: 25.046210008783582, y: 19.742057310841094, scale: 20, show: true },
-  up: { x: 26.160016374861247, y: 55.45634744028566, scale: 20, show: true },
-  down: { x: 26.04363831208012, y: 88.6573968110261, scale: 20, show: true },
-  left: { x: 19.646652660405252, y: 71.89153085940724, scale: 20, show: true },
-  right: { x: 32.638172557906465, y: 72.33795236658165, scale: 20, show: true },
-  RS: { x: 62.30258743381299, y: 62.516539689725036, scale: 20, show: true },
-  A: { x: 72.96207905613684, y: 39.533730158730194, scale: 20, show: true },
-  B: { x: 79.04724703990307, y: 24.239411808195566, scale: 20, show: true },
-  X: { x: 67.44732718216946, y: 24.999992935745812, scale: 20, show: true },
-  Y: { x: 73.01095713556357, y: 9.259263674418131, scale: 20, show: true },
-  back: { x: 60.16938081538901, y: 2.5132292792910564, scale: 20, show: true },
-  start: { x: 37.01578569925944, y: 2.2652120817275287, scale: 20, show: true },
-  guide: { x: 48.66870774800849, y: 13.88888888888889, scale: 20, show: true },
-  LTb: { x: 14.329976765687192, y: 2.4801490168092113, scale: 20, show: true },
-  RTb: { x: 85.03412443424894, y: 0, scale: 20, show: true },
-  LSb: { x: 32.3376019343543, y: 32.77116225510048, scale: 20, show: true },
-  RSb: { x: 74.44554161671081, y: 72.13955026455025, scale: 20, show: true },
-  M1: { x: 88.69142508865353, y: 98.26388888888889, scale: 20, show: false },
-  M2: { x: 78.3247338679961, y: 98.2638782925076, scale: 20, show: false },
-  M3: { x: 97.32023313018686, y: 44.19642857142857, scale: 20, show: false },
-  M4: { x: 98.19819530416518, y: 70.43650970257146, scale: 20, show: false },
-  fullscreen: { x: 100, y: 100, scale: 20, show: true },
-  record: {
-    x: 43.31258282981342,
-    y: 75.97552203627492,
-    scale: 20,
-    show: false,
-  },
-  turbo: {
-    x: 52.822641867929505,
-    y: 75.95899294293118,
-    scale: 20,
-    show: false,
-  },
-  "speed-": {
-    x: 42.9872910289067,
-    y: 98.61108991834853,
-    scale: 20,
-    show: false,
-  },
-  "speed+": {
-    x: 52.6317061812778,
-    y: 99.18982187906902,
-    scale: 20,
-    show: false,
-  },
-  status: {
-    x: 48.611964318465326,
-    y: 44.427910052910065,
-    scale: 20,
-    show: true,
-  },
-  settings: { x: 100, y: 0, scale: 20, show: true },
-  edit: { x: 65.33902033972704, y: 100, scale: 20, show: true },
-};
 
 function initGamepad() {
   const wsprotocol = document.location.protocol === "https:" ? "wss" : "ws";
